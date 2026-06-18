@@ -12,7 +12,8 @@ const statusEl = document.getElementById("status");
 let geoJsonLayer;
 const idCounts = new Map();
 const csvDataById = new Map();
-let maxCsvCount = 1;
+const streetCounts = new Map();
+let maxStreetCount = 1;
 
 L.tileLayer(MAP_CONFIG.tileUrl, {
   attribution: MAP_CONFIG.tileAttribution,
@@ -77,6 +78,7 @@ async function loadCsvData() {
     const headers = rows[0].map((header) => header.replace(/\uFEFF/g, "").trim());
     const idIndex = headers.findIndex((header) => header === "ID");
     const countIndex = headers.findIndex((header) => /COUNTA of Тип заяви/i.test(header) || /COUNT/i.test(header) || /Тип заяви/i.test(header));
+    const streetIndex = headers.findIndex((header) => /Вулиця/i.test(header));
 
     for (const row of rows.slice(1)) {
       const id = row[idIndex]?.trim();
@@ -85,7 +87,11 @@ async function loadCsvData() {
       const countValue = row[countIndex] ? row[countIndex].trim().replace(/\s+/g, "") : "";
       const count = parseInt(countValue.replace(/[^0-9]/g, ""), 10) || 1;
       idCounts.set(id, count);
-      maxCsvCount = Math.max(maxCsvCount, count);
+
+      const street = row[streetIndex]?.trim() || "Unknown";
+      const currentStreetCount = streetCounts.get(street) || 0;
+      streetCounts.set(street, currentStreetCount + count);
+      maxStreetCount = Math.max(maxStreetCount, currentStreetCount + count);
 
       const record = {};
       headers.forEach((header, index) => {
@@ -145,11 +151,11 @@ function parseCsv(text) {
 
 function featureStyle(feature) {
   const props = feature.properties || {};
-  const id = props.ID || props.id || "";
-  const count = idCounts.get(id) || 1;
+  const street = props["Вулиця"] || props.osm_street || "Unknown";
+  const streetCount = streetCounts.get(street) || 1;
 
   return {
-    color: getLineColor(count),
+    color: getLineColor(streetCount),
     weight: 2.4,
     opacity: 1,
   };
@@ -157,18 +163,18 @@ function featureStyle(feature) {
 
 function getLineColor(count) {
   const colors = [
-    "rgba(255, 0, 0, 0.16)",
-    "rgba(255, 0, 0, 0.28)",
-    "rgba(255, 0, 0, 0.40)",
-    "rgba(255, 0, 0, 0.55)",
-    "rgba(255, 0, 0, 0.72)",
-    "rgba(255, 0, 0, 0.92)",
+    "rgba(255, 0, 0, 0.12)",
+    "rgba(255, 0, 0, 0.24)",
+    "rgba(255, 0, 0, 0.36)",
+    "rgba(255, 0, 0, 0.52)",
+    "rgba(255, 0, 0, 0.68)",
+    "rgba(255, 0, 0, 0.88)",
   ];
-  if (maxCsvCount <= 1) {
+  if (maxStreetCount <= 1) {
     return colors[0];
   }
 
-  const ratio = Math.min(1, Math.max(0, (count - 1) / (maxCsvCount - 1)));
+  const ratio = Math.min(1, Math.max(0, (count - 1) / (maxStreetCount - 1)));
   const index = Math.round(ratio * (colors.length - 1));
   return colors[index];
 }
@@ -178,11 +184,14 @@ function onEachFeature(feature, layer) {
 
   layer.on({
     mouseover(event) {
+      const props = event.target.feature.properties || {};
+      const street = props["Вулиця"] || props.osm_street || "Unknown";
+      const streetCount = streetCounts.get(street) || 1;
+      
       event.target.setStyle({
-        ...FEATURE_HOVER_STYLE,
-        color: "#550000",
-        fillColor: "#ff6666",
-        fillOpacity: 0.75,
+        color: "rgba(255, 0, 0, 1)",
+        weight: 3.5,
+        opacity: 1,
       });
       event.target.bringToFront();
     },
