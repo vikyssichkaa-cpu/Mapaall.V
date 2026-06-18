@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Khmelnytskyi Map</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app__header">
+        <h1>Khmelnytskyi City Map</h1>
+      </header>
+      <main class="app__main">
+        <div id="map" aria-label="Khmelnytskyi interactive map"></div>
+        <div id="status" class="status status--visible" role="status" aria-live="polite">
+          Loading data...
+        </div>
+      </main>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script type="module" src="js/map.js"></script>
+  </body>
+</html>
