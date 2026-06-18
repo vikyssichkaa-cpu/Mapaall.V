@@ -187,19 +187,35 @@ function buildPopupHtml(feature) {
   const id = props.ID || props.id || "";
   const csvProps = csvDataById.get(id) || {};
   const count = idCounts.get(id) || 1;
-  const title = props["Вулиця"] || props.osm_name || props.osm_street || `Object ${id}`;
+  const title = props["Вулиця"] || props.osm_name || props.osm_street || `Об'єкт`;
+  const subtitle = props["Населений пункт"] || props["Громада"] || "Донецька обл.";
 
   const mergedProps = { ...props, ...csvProps };
-  const details = Object.entries(mergedProps)
-    .filter(([key, value]) => key !== "ID" && value != null && value !== "")
-    .map(([key, value]) => `<p><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</p>`)
+  const visibleEntries = Object.entries(mergedProps)
+    .filter(([key, value]) => key !== "ID" && value != null && value !== "" && key !== "Вулиця" && key !== "Населений пункт" && key !== "Громада")
+    .sort(([a], [b]) => a.localeCompare(b, "uk-UA"));
+
+  const details = visibleEntries
+    .map(([key, value]) => {
+      return `
+        <div class="popup-row">
+          <span class="popup-key">${escapeHtml(key)}</span>
+          <span class="popup-value">${escapeHtml(String(value))}</span>
+        </div>`;
+    })
     .join("");
 
-  const repeatHtml = count > 1 ? `<p><strong>Кількість будинків / заяв:</strong> ${count}</p>` : "";
+  const repeatHtml = count > 1 ? `<div class="popup-repeat">${escapeHtml(`Кількість заяв / будинків: ${count}`)}</div>` : "";
 
   return `
     <div class="popup">
-      <h3>${escapeHtml(title)}</h3>
+      <div class="popup-header">
+        <div class="popup-icon">≡</div>
+        <div>
+          <div class="popup-title">${escapeHtml(title)}</div>
+          <div class="popup-subtitle">${escapeHtml(subtitle)}</div>
+        </div>
+      </div>
       ${repeatHtml}
       ${details}
     </div>
