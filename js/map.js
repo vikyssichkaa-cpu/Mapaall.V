@@ -147,27 +147,22 @@ function featureStyle(feature) {
   const props = feature.properties || {};
   const id = props.ID || props.id || "";
   const count = idCounts.get(id) || 1;
-  const fillColor = getFillColor(count);
-  const borderColor = "#b30000";
 
   return {
-    color: borderColor,
-    fillColor,
-    weight: 2.8,
-    opacity: 0.95,
-    fillOpacity: 0.15,
+    color: getLineColor(count),
+    weight: 2.4,
+    opacity: 1,
   };
 }
 
-function getFillColor(count) {
+function getLineColor(count) {
   const colors = [
-    "#fff7f7",
-    "#ffeaea",
-    "#ffd7d7",
-    "#ffc4c4",
-    "#ffb1b1",
-    "#ff9e9e",
-    "#ff8a8a",
+    "rgba(255, 0, 0, 0.16)",
+    "rgba(255, 0, 0, 0.28)",
+    "rgba(255, 0, 0, 0.40)",
+    "rgba(255, 0, 0, 0.55)",
+    "rgba(255, 0, 0, 0.72)",
+    "rgba(255, 0, 0, 0.92)",
   ];
   if (maxCsvCount <= 1) {
     return colors[0];
@@ -176,10 +171,6 @@ function getFillColor(count) {
   const ratio = Math.min(1, Math.max(0, (count - 1) / (maxCsvCount - 1)));
   const index = Math.round(ratio * (colors.length - 1));
   return colors[index];
-}
-
-function getBorderColor(count) {
-  return "#b30000";
 }
 
 function onEachFeature(feature, layer) {
