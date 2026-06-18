@@ -154,20 +154,20 @@ function featureStyle(feature) {
     color: borderColor,
     fillColor,
     weight: 2.8,
-    opacity: 0.9,
-    fillOpacity: 0.45,
+    opacity: 0.95,
+    fillOpacity: 0.15,
   };
 }
 
 function getFillColor(count) {
   const colors = [
-    "#fff0f0",
-    "#ffd6d6",
-    "#ffb3b3",
-    "#ff8c8c",
-    "#ff6666",
-    "#ff3b3b",
-    "#e60000",
+    "#fff7f7",
+    "#ffeaea",
+    "#ffd7d7",
+    "#ffc4c4",
+    "#ffb1b1",
+    "#ff9e9e",
+    "#ff8a8a",
   ];
   if (maxCsvCount <= 1) {
     return colors[0];
@@ -232,7 +232,7 @@ function buildPopupHtml(feature) {
         <span class="popup-value">${escapeHtml(String(claimCount))}</span>
       </div>
       <div class="popup-row">
-        <span class="popup-key">Наявна сума компенсації в грн</span>
+        <span class="popup-key">Наявна сума компенсації в гривні</span>
         <span class="popup-value">${escapeHtml(String(compensation))}</span>
       </div>
     </div>
