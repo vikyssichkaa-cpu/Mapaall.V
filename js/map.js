@@ -148,19 +148,19 @@ function featureStyle(feature) {
   const id = props.ID || props.id || "";
   const count = idCounts.get(id) || 1;
   const fillColor = getFillColor(count);
-  const borderColor = getBorderColor(count);
+  const borderColor = "#b30000";
 
   return {
     color: borderColor,
     fillColor,
-    weight: 2.4,
+    weight: 2.8,
     opacity: 0.95,
     fillOpacity: 0.55,
   };
 }
 
 function getFillColor(count) {
-  const colors = ["#ffd6d6", "#ff4d4d", "#ff1a1a", "#e60000", "#cc0000", "#8b0000"];
+  const colors = ["#ffe5e5", "#ffcccc", "#ff9999", "#ff6666", "#ff4d4d", "#ff0000"];
   if (maxCsvCount <= 1) {
     return colors[0];
   }
@@ -171,14 +171,7 @@ function getFillColor(count) {
 }
 
 function getBorderColor(count) {
-  const colors = ["#cc0000", "#b30000", "#990000", "#800000", "#660000", "#330000"];
-  if (maxCsvCount <= 1) {
-    return colors[0];
-  }
-
-  const ratio = Math.min(1, Math.max(0, (count - 1) / (maxCsvCount - 1)));
-  const index = Math.round(ratio * (colors.length - 1));
-  return colors[index];
+  return "#b30000";
 }
 
 function onEachFeature(feature, layer) {
@@ -206,26 +199,12 @@ function buildPopupHtml(feature) {
   const props = feature.properties || {};
   const id = props.ID || props.id || "";
   const csvProps = csvDataById.get(id) || {};
-  const count = idCounts.get(id) || 1;
-  const title = props["Вулиця"] || props.osm_name || props.osm_street || `Об'єкт`;
+  const title = props["Вулиця"] || props.osm_name || props.osm_street || "Об'єкт";
   const subtitle = props["Населений пункт"] || props["Громада"] || "Донецька обл.";
 
-  const mergedProps = { ...props, ...csvProps };
-  const visibleEntries = Object.entries(mergedProps)
-    .filter(([key, value]) => key !== "ID" && value != null && value !== "" && key !== "Вулиця" && key !== "Населений пункт" && key !== "Громада")
-    .sort(([a], [b]) => a.localeCompare(b, "uk-UA"));
-
-  const details = visibleEntries
-    .map(([key, value]) => {
-      return `
-        <div class="popup-row">
-          <span class="popup-key">${escapeHtml(key)}</span>
-          <span class="popup-value">${escapeHtml(String(value))}</span>
-        </div>`;
-    })
-    .join("");
-
-  const repeatHtml = count > 1 ? `<div class="popup-repeat">${escapeHtml(`Кількість заяв / будинків: ${count}`)}</div>` : "";
+  const area = props["Область"] || csvProps["Область"] || "Донецька обл.";
+  const claimCount = csvProps["COUNTA of Тип заяви"] || csvProps["Тип заяви"] || "1";
+  const compensation = csvProps["SUM of Сума компенсації, грн"] || csvProps["Сума компенсації, грн"] || "0,00";
 
   return `
     <div class="popup">
@@ -236,8 +215,18 @@ function buildPopupHtml(feature) {
           <div class="popup-subtitle">${escapeHtml(subtitle)}</div>
         </div>
       </div>
-      ${repeatHtml}
-      ${details}
+      <div class="popup-row">
+        <span class="popup-key">Область</span>
+        <span class="popup-value">${escapeHtml(area)}</span>
+      </div>
+      <div class="popup-row">
+        <span class="popup-key">Кількість заяв</span>
+        <span class="popup-value">${escapeHtml(String(claimCount))}</span>
+      </div>
+      <div class="popup-row">
+        <span class="popup-key">Наявна сума компенсації в грн</span>
+        <span class="popup-value">${escapeHtml(String(compensation))}</span>
+      </div>
     </div>
   `;
 }
