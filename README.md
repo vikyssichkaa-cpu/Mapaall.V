@@ -1,4 +1,4 @@
-# Khmelnytskyi Leaflet Map
+# Donetsk Leaflet Map
 
 Static map project based on vanilla HTML/CSS/JS + Leaflet with CartoDB Positron Light tiles.
 
