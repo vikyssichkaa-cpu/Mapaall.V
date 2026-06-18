@@ -10,7 +10,9 @@ const map = L.map("map", {
 
 const statusEl = document.getElementById("status");
 let geoJsonLayer;
-const addressCounts = new Map();
+const idCounts = new Map();
+const csvDataById = new Map();
+let maxCsvCount = 1;
 
 L.tileLayer(MAP_CONFIG.tileUrl, {
   attribution: MAP_CONFIG.tileAttribution,
@@ -27,13 +29,14 @@ async function loadGeoJson() {
   setStatus("Loading map objects...");
 
   try {
+    await loadCsvData();
+
     const response = await fetch(MAP_CONFIG.geoJsonPath, { cache: "no-store" });
     if (!response.ok) {
       throw new Error(`Failed to load GeoJSON: ${response.status}`);
     }
 
     const geoJson = await response.json();
-    computeAddressCounts(geoJson.features || []);
 
     geoJsonLayer = L.geoJSON(geoJson, {
       style: featureStyle,
@@ -59,27 +62,91 @@ async function loadGeoJson() {
   }
 }
 
-function computeAddressCounts(features) {
-  for (const feature of features) {
-    const addressKey = getAddressKey(feature.properties || {});
-    addressCounts.set(addressKey, (addressCounts.get(addressKey) || 0) + 1);
+async function loadCsvData() {
+  try {
+    const response = await fetch(encodeURI(MAP_CONFIG.csvPath), { cache: "no-store" });
+    if (!response.ok) {
+      console.warn(`Failed to load CSV: ${response.status}`);
+      return;
+    }
+
+    const text = await response.text();
+    const rows = parseCsv(text);
+    if (!rows.length) return;
+
+    const headers = rows[0].map((header) => header.replace(/\uFEFF/g, "").trim());
+    const idIndex = headers.findIndex((header) => header === "ID");
+    const countIndex = headers.findIndex((header) => /COUNTA of Тип заяви/i.test(header) || /COUNT/i.test(header) || /Тип заяви/i.test(header));
+
+    for (const row of rows.slice(1)) {
+      const id = row[idIndex]?.trim();
+      if (!id) continue;
+
+      const countValue = row[countIndex] ? row[countIndex].trim().replace(/\s+/g, "") : "";
+      const count = parseInt(countValue.replace(/[^0-9]/g, ""), 10) || 1;
+      idCounts.set(id, count);
+      maxCsvCount = Math.max(maxCsvCount, count);
+
+      const record = {};
+      headers.forEach((header, index) => {
+        if (index === idIndex) return;
+        const value = row[index]?.trim();
+        if (value) {
+          record[header] = value;
+        }
+      });
+      csvDataById.set(id, record);
+    }
+  } catch (error) {
+    console.warn("CSV parsing error", error);
   }
 }
 
-function getAddressKey(props = {}) {
-  const parts = ["Область", "Громада", "Населений пункт", "Вулиця"];
-  const addressParts = parts.map((key) => props[key]).filter(Boolean);
-  if (addressParts.length) {
-    return addressParts.join(" | ");
+function parseCsv(text) {
+  const rows = [];
+  let current = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        field += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      current.push(field);
+      field = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") {
+        i++;
+      }
+      current.push(field);
+      rows.push(current);
+      current = [];
+      field = "";
+    } else {
+      field += char;
+    }
   }
-  if (props.osm_street) return props.osm_street;
-  if (props.osm_name) return props.osm_name;
-  return "Unknown address";
+
+  if (field !== "" || current.length > 0) {
+    current.push(field);
+    rows.push(current);
+  }
+
+  return rows.filter((row) => row.length > 1 || (row.length === 1 && row[0] !== ""));
 }
 
 function featureStyle(feature) {
   const props = feature.properties || {};
-  const count = addressCounts.get(getAddressKey(props)) || 1;
+  const id = props.ID || props.id || "";
+  const count = idCounts.get(id) || 1;
 
   return {
     color: getLineColor(count),
@@ -89,8 +156,14 @@ function featureStyle(feature) {
 }
 
 function getLineColor(count) {
-  const colors = ["#ffb3b3", "#ff8080", "#ff4d4d", "#ff1a1a", "#e60000", "#990000"];
-  return colors[Math.min(count, colors.length) - 1] || colors[colors.length - 1];
+  const colors = ["#ffe5e5", "#ff9999", "#ff6666", "#ff3333", "#e60000", "#990000"];
+  if (maxCsvCount <= 1) {
+    return colors[0];
+  }
+
+  const ratio = Math.min(1, Math.max(0, (count - 1) / (maxCsvCount - 1)));
+  const index = Math.round(ratio * (colors.length - 1));
+  return colors[index];
 }
 
 function onEachFeature(feature, layer) {
@@ -111,16 +184,18 @@ function onEachFeature(feature, layer) {
 
 function buildPopupHtml(feature) {
   const props = feature.properties || {};
-  const addressKey = getAddressKey(props);
-  const count = addressCounts.get(addressKey) || 1;
-  const title = props["Вулиця"] || props.osm_name || props.osm_street || `Object ${props.ID || ""}`;
+  const id = props.ID || props.id || "";
+  const csvProps = csvDataById.get(id) || {};
+  const count = idCounts.get(id) || 1;
+  const title = props["Вулиця"] || props.osm_name || props.osm_street || `Object ${id}`;
 
-  const details = Object.entries(props)
+  const mergedProps = { ...props, ...csvProps };
+  const details = Object.entries(mergedProps)
     .filter(([key, value]) => key !== "ID" && value != null && value !== "")
     .map(([key, value]) => `<p><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</p>`)
     .join("");
 
-  const repeatHtml = count > 1 ? `<p><strong>Повторів за адресою:</strong> ${count}</p>` : "";
+  const repeatHtml = count > 1 ? `<p><strong>Кількість будинків / заяв:</strong> ${count}</p>` : "";
 
   return `
     <div class="popup">
