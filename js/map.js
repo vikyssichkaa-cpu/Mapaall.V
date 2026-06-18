@@ -154,13 +154,21 @@ function featureStyle(feature) {
     color: borderColor,
     fillColor,
     weight: 2.8,
-    opacity: 0.95,
-    fillOpacity: 0.55,
+    opacity: 0.9,
+    fillOpacity: 0.45,
   };
 }
 
 function getFillColor(count) {
-  const colors = ["#ffe5e5", "#ffcccc", "#ff9999", "#ff6666", "#ff4d4d", "#ff0000"];
+  const colors = [
+    "#fff0f0",
+    "#ffd6d6",
+    "#ffb3b3",
+    "#ff8c8c",
+    "#ff6666",
+    "#ff3b3b",
+    "#e60000",
+  ];
   if (maxCsvCount <= 1) {
     return colors[0];
   }
