@@ -147,16 +147,31 @@ function featureStyle(feature) {
   const props = feature.properties || {};
   const id = props.ID || props.id || "";
   const count = idCounts.get(id) || 1;
+  const fillColor = getFillColor(count);
+  const borderColor = getBorderColor(count);
 
   return {
-    color: getLineColor(count),
-    weight: 2.2,
-    opacity: 0.85,
+    color: borderColor,
+    fillColor,
+    weight: 2.4,
+    opacity: 0.95,
+    fillOpacity: 0.55,
   };
 }
 
-function getLineColor(count) {
-  const colors = ["#ffe5e5", "#ff9999", "#ff6666", "#ff3333", "#e60000", "#990000"];
+function getFillColor(count) {
+  const colors = ["#ffd6d6", "#ff4d4d", "#ff1a1a", "#e60000", "#cc0000", "#8b0000"];
+  if (maxCsvCount <= 1) {
+    return colors[0];
+  }
+
+  const ratio = Math.min(1, Math.max(0, (count - 1) / (maxCsvCount - 1)));
+  const index = Math.round(ratio * (colors.length - 1));
+  return colors[index];
+}
+
+function getBorderColor(count) {
+  const colors = ["#cc0000", "#b30000", "#990000", "#800000", "#660000", "#330000"];
   if (maxCsvCount <= 1) {
     return colors[0];
   }
@@ -171,7 +186,12 @@ function onEachFeature(feature, layer) {
 
   layer.on({
     mouseover(event) {
-      event.target.setStyle(FEATURE_HOVER_STYLE);
+      event.target.setStyle({
+        ...FEATURE_HOVER_STYLE,
+        color: "#550000",
+        fillColor: "#ff6666",
+        fillOpacity: 0.75,
+      });
       event.target.bringToFront();
     },
     mouseout(event) {
