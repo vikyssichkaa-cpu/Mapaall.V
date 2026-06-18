@@ -1,4 +1,4 @@
-import { MAP_CONFIG, FEATURE_STYLE, FEATURE_HOVER_STYLE } from "./config.js";
+import { MAP_CONFIG, FEATURE_HOVER_STYLE } from "./config.js";
 
 const map = L.map("map", {
   zoomControl: true,
@@ -10,6 +10,7 @@ const map = L.map("map", {
 
 const statusEl = document.getElementById("status");
 let geoJsonLayer;
+const addressCounts = new Map();
 
 L.tileLayer(MAP_CONFIG.tileUrl, {
   attribution: MAP_CONFIG.tileAttribution,
@@ -32,8 +33,10 @@ async function loadGeoJson() {
     }
 
     const geoJson = await response.json();
+    computeAddressCounts(geoJson.features || []);
+
     geoJsonLayer = L.geoJSON(geoJson, {
-      style: FEATURE_STYLE,
+      style: featureStyle,
       onEachFeature,
     }).addTo(map);
 
@@ -56,6 +59,40 @@ async function loadGeoJson() {
   }
 }
 
+function computeAddressCounts(features) {
+  for (const feature of features) {
+    const addressKey = getAddressKey(feature.properties || {});
+    addressCounts.set(addressKey, (addressCounts.get(addressKey) || 0) + 1);
+  }
+}
+
+function getAddressKey(props = {}) {
+  const parts = ["Область", "Громада", "Населений пункт", "Вулиця"];
+  const addressParts = parts.map((key) => props[key]).filter(Boolean);
+  if (addressParts.length) {
+    return addressParts.join(" | ");
+  }
+  if (props.osm_street) return props.osm_street;
+  if (props.osm_name) return props.osm_name;
+  return "Unknown address";
+}
+
+function featureStyle(feature) {
+  const props = feature.properties || {};
+  const count = addressCounts.get(getAddressKey(props)) || 1;
+
+  return {
+    color: getLineColor(count),
+    weight: 2.2,
+    opacity: 0.85,
+  };
+}
+
+function getLineColor(count) {
+  const colors = ["#ffb3b3", "#ff8080", "#ff4d4d", "#ff1a1a", "#e60000", "#990000"];
+  return colors[Math.min(count, colors.length) - 1] || colors[colors.length - 1];
+}
+
 function onEachFeature(feature, layer) {
   layer.bindPopup(buildPopupHtml(feature), { maxWidth: 360 });
 
@@ -74,27 +111,22 @@ function onEachFeature(feature, layer) {
 
 function buildPopupHtml(feature) {
   const props = feature.properties || {};
+  const addressKey = getAddressKey(props);
+  const count = addressCounts.get(addressKey) || 1;
+  const title = props["Вулиця"] || props.osm_name || props.osm_street || `Object ${props.ID || ""}`;
 
-  const title = escapeHtml(props.attr_Title || `Object ${props.ID || ""}`.trim() || "Object");
-  const description = props.attr_Text ? `<p class="popup__text">${escapeHtml(props.attr_Text)}</p>` : "";
+  const details = Object.entries(props)
+    .filter(([key, value]) => key !== "ID" && value != null && value !== "")
+    .map(([key, value]) => `<p><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</p>`)
+    .join("");
 
-  const addressParts = [props["attr_Тип ВДМ"], props["attr_Вулиця"], props["attr_Номер будинку"]].filter(Boolean);
-  const addressHtml = addressParts.length
-    ? `<p><strong>Address:</strong> ${escapeHtml(addressParts.join(" "))}</p>`
-    : "";
-
-  const typeHtml = props["attr_Вид"] ? `<p><strong>Type:</strong> ${escapeHtml(props["attr_Вид"])}</p>` : "";
-
-  const sourceUrl = safeUrl(props.attr_Source);
-  const sourceHtml = sourceUrl ? `<p><a href="${sourceUrl}" target="_blank" rel="noopener">Source</a></p>` : "";
+  const repeatHtml = count > 1 ? `<p><strong>Повторів за адресою:</strong> ${count}</p>` : "";
 
   return `
     <div class="popup">
-      <h3>${title}</h3>
-      ${typeHtml}
-      ${addressHtml}
-      ${description}
-      ${sourceHtml}
+      <h3>${escapeHtml(title)}</h3>
+      ${repeatHtml}
+      ${details}
     </div>
   `;
 }
