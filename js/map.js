@@ -46,13 +46,13 @@ async function loadGeoJson() {
 
     const bounds = geoJsonLayer.getBounds();
     if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [20, 20] });
+      const fitZoom = map.getBoundsZoom(bounds, false, [20, 20]);
+      const targetZoom = Math.max(fitZoom, MAP_CONFIG.initialZoom);
+      map.setView(bounds.getCenter(), targetZoom);
 
       const paddedBounds = bounds.pad(MAP_CONFIG.maxBoundsPad);
       map.setMaxBounds(paddedBounds);
-
-      const fitZoom = map.getBoundsZoom(bounds, false, [20, 20]);
-      map.setMinZoom(Math.max(MAP_CONFIG.minZoom, fitZoom));
+      map.setMinZoom(Math.max(MAP_CONFIG.minZoom, targetZoom));
     }
 
     const featureCount = Array.isArray(geoJson.features) ? geoJson.features.length : 0;
@@ -156,19 +156,19 @@ function featureStyle(feature) {
 
   return {
     color: getLineColor(streetCount),
-    weight: 2.4,
-    opacity: 1,
+    weight: 2.8,
+    opacity: 0.98,
   };
 }
 
 function getLineColor(count) {
   const colors = [
-    "rgba(255, 0, 0, 0.12)",
-    "rgba(255, 0, 0, 0.24)",
-    "rgba(255, 0, 0, 0.36)",
-    "rgba(255, 0, 0, 0.52)",
-    "rgba(255, 0, 0, 0.68)",
-    "rgba(255, 0, 0, 0.88)",
+    "rgba(255, 0, 0, 0.20)",
+    "rgba(255, 0, 0, 0.32)",
+    "rgba(255, 0, 0, 0.48)",
+    "rgba(255, 0, 0, 0.62)",
+    "rgba(255, 0, 0, 0.78)",
+    "rgba(255, 0, 0, 0.98)",
   ];
   if (maxStreetCount <= 1) {
     return colors[0];
