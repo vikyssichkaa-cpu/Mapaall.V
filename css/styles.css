@@ -63,6 +63,51 @@ body {
   opacity: 1;
 }
 
+.map-search {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1100;
+  display: flex;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+
+.map-search input {
+  flex: 1;
+  min-width: 220px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: #111827;
+}
+
+.map-search button {
+  border: none;
+  background: #dc2626;
+  color: #ffffff;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.map-search button:hover {
+  background: #b91c1c;
+}
+
+.map-search button:focus-visible,
+.map-search input:focus-visible {
+  outline: 2px solid rgba(220, 38, 38, 0.4);
+  outline-offset: 2px;
+}
+
 .popup {
   max-width: 340px;
   font-size: 13px;

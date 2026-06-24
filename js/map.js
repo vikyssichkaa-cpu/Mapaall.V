@@ -9,6 +9,8 @@ const map = L.map("map", {
 });
 
 const statusEl = document.getElementById("status");
+const searchInput = document.getElementById("map-search-input");
+const searchButton = document.getElementById("map-search-button");
 let geoJsonLayer;
 const idCounts = new Map();
 const csvDataById = new Map();
@@ -24,6 +26,7 @@ L.tileLayer(MAP_CONFIG.tileUrl, {
 L.control.scale({ imperial: false }).addTo(map);
 map.setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
 
+attachSearchHandlers();
 loadGeoJson();
 
 async function loadGeoJson() {
@@ -254,6 +257,67 @@ function safeUrl(rawValue) {
   }
 
   return null;
+}
+
+function attachSearchHandlers() {
+  if (!searchInput || !searchButton) return;
+
+  searchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runMapSearch();
+    }
+  });
+
+  searchButton.addEventListener("click", () => {
+    runMapSearch();
+  });
+}
+
+function runMapSearch() {
+  if (!geoJsonLayer) {
+    setStatus("Завантаження карти ще не завершено, зачекайте.");
+    return;
+  }
+
+  const query = searchInput?.value.trim();
+  if (!query) {
+    setStatus("Введіть вулицю або населений пункт для пошуку.");
+    return;
+  }
+
+  const normalizedQuery = query.toLowerCase();
+  const matches = [];
+
+  geoJsonLayer.eachLayer((layer) => {
+    const props = layer.feature?.properties || {};
+    const street = (props["Вулиця"] || props.osm_street || "").toString().trim();
+    const settlement = (props["Населений пункт"] || props["Громада"] || props.osm_city || "").toString().trim();
+    const address = `${street} ${settlement}`.toLowerCase();
+
+    if (address.includes(normalizedQuery)) {
+      matches.push({ layer, title: street || settlement || "Об'єкт" });
+    }
+  });
+
+  if (!matches.length) {
+    setStatus(`Нічого не знайдено для "${query}".`);
+    return;
+  }
+
+  const { layer, title } = matches[0];
+  const bounds = layer.getBounds?.() || layer.getLatLng?.();
+
+  if (bounds) {
+    if (typeof bounds.getCenter === "function" && typeof bounds.pad === "function") {
+      map.fitBounds(bounds.pad(0.2), { maxZoom: 17 });
+    } else if (typeof bounds.lat === "number" && typeof bounds.lng === "number") {
+      map.setView(bounds, 17);
+    }
+  }
+
+  layer.openPopup();
+  setStatus(`Знайдено ${matches.length} об'єктів. Перший: ${title}`);
 }
 
 function setStatus(message, isError = false) {
