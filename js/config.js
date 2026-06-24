@@ -3,12 +3,12 @@ export const MAP_CONFIG = {
   csvPath: "Зведна табличка проєкт - Зведена таблиця.csv",
   initialCenter: [48.0159, 37.8028],
   initialZoom: 13,
-  minZoom: 5,
+  minZoom: 3,
   maxZoom: 20,
   maxBoundsPad: 0.08,
-  tileUrl: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-  tileAttribution:
-    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  tileUrl: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  tileAttribution: "© OpenStreetMap contributors",
+  tileMaxNativeZoom: 19,
 };
 
 export const FEATURE_STYLE = {
