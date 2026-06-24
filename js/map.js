@@ -57,7 +57,7 @@ async function loadGeoJson() {
       const paddedBounds = bounds.pad(MAP_CONFIG.maxBoundsPad);
       // Allow zooming out past the feature bounds so the whole oblast can be viewed.
       // map.setMaxBounds(paddedBounds);
-      map.setMinZoom(Math.max(MAP_CONFIG.minZoom, targetZoom));
+      map.setMinZoom(MAP_CONFIG.minZoom);
     }
 
     const featureCount = Array.isArray(geoJson.features) ? geoJson.features.length : 0;
