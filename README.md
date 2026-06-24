@@ -1,4 +1,4 @@
-# Donetsk Leaflet Map
+# Вільне Радіо
 
 Static map project based on vanilla HTML/CSS/JS + Leaflet with CartoDB Positron Light tiles.
 
