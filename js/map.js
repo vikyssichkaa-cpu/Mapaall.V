@@ -2,6 +2,12 @@ import { MAP_CONFIG, FEATURE_HOVER_STYLE } from "./config.js";
 
 const map = L.map("map", {
   zoomControl: true,
+  scrollWheelZoom: true,
+  touchZoom: true,
+  doubleClickZoom: true,
+  zoomSnap: 0.25,
+  zoomDelta: 0.25,
+  wheelPxPerZoomLevel: 80,
   minZoom: MAP_CONFIG.minZoom,
   maxZoom: MAP_CONFIG.maxZoom,
   maxBoundsViscosity: 1,
