@@ -135,14 +135,10 @@ function renderGeoJsonLayer() {
   const totalFeatures = Array.isArray(currentGeoJson.features) ? currentGeoJson.features.length : 0;
   setStatus(`Loaded ${totalFeatures} objects`);
 
-  const bounds = geoJsonLayer.getBounds();
-  if (bounds.isValid()) {
-    const paddedBounds = bounds.pad(MAP_CONFIG.maxBoundsPad);
-    map.fitBounds(paddedBounds, {
-      maxZoom: MAP_CONFIG.maxZoom,
-    });
-    map.setMinZoom(MAP_CONFIG.minZoom);
-  }
+  map.fitBounds(DONETSK_BOUNDS, {
+    maxZoom: MAP_CONFIG.maxZoom,
+  });
+  map.setMinZoom(MAP_CONFIG.minZoom);
 }
 
 async function loadCsvData() {
