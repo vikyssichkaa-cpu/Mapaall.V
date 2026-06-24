@@ -1,5 +1,5 @@
 export const MAP_CONFIG = {
-  geoJsonPath: "data/Data.geojson",
+  geoJsonPath: "data/Data_settlement_fixed.geojson",
   csvPath: "Зведна табличка проєкт - Зведена таблиця.csv",
   initialCenter: [48.0159, 37.8028],
   initialZoom: 13,
