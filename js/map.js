@@ -11,6 +11,7 @@ const map = L.map("map", {
 const statusEl = document.getElementById("status");
 const searchInput = document.getElementById("map-search-input");
 const searchButton = document.getElementById("map-search-button");
+const searchResultsEl = document.getElementById("map-search-results");
 let geoJsonLayer;
 const idCounts = new Map();
 const csvDataById = new Map();
@@ -272,6 +273,14 @@ function attachSearchHandlers() {
   searchButton.addEventListener("click", () => {
     runMapSearch();
   });
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    const searchContainer = searchInput.closest(".map-search");
+    if (searchContainer && !searchContainer.contains(target)) {
+      closeSearchResults();
+    }
+  });
 }
 
 function runMapSearch() {
@@ -283,6 +292,7 @@ function runMapSearch() {
   const query = searchInput?.value.trim();
   if (!query) {
     setStatus("Введіть вулицю або населений пункт для пошуку.");
+    closeSearchResults();
     return;
   }
 
@@ -316,31 +326,70 @@ function runMapSearch() {
 
   if (!matches.length) {
     setStatus(`Нічого не знайдено для "${query}".`);
+    closeSearchResults();
     return;
   }
 
   matches.sort((a, b) => b.score - a.score);
-  const bestMatch = matches[0];
-  const title = bestMatch.settlement || bestMatch.street || "Об'єкт";
-
-  if (useSettlementMatches) {
-    const settlementName = bestMatch.settlement;
-    const sameSettlementLayers = settlementMatches.filter((item) => item.settlement === settlementName).map((item) => item.layer);
-    const bounds = L.featureGroup(sameSettlementLayers).getBounds();
-
-    if (bounds.isValid()) {
-      map.fitBounds(bounds.pad(0.18), { maxZoom: 12 });
-    }
-
-    if (sameSettlementLayers.length) {
-      sameSettlementLayers[0].openPopup();
-    }
-
-    setStatus(`Знайдено ${sameSettlementLayers.length} об'єктів у ${settlementName}.`);
+  if (matches.length === 1) {
+    selectSearchResult(matches[0]);
     return;
   }
 
-  const bounds = bestMatch.layer.getBounds?.() || bestMatch.layer.getLatLng?.();
+  const resultItems = matches.map((match) => ({
+    layer: match.layer,
+    street: match.street,
+    settlement: match.settlement,
+  }));
+  renderSearchResults(resultItems);
+  setStatus(`Знайдено ${matches.length} об'єктів.`);
+}
+
+function renderSearchResults(results) {
+  if (!searchResultsEl) return;
+
+  closeSearchResults();
+
+  const list = document.createElement("ul");
+  list.className = "map-search-results__list";
+
+  results.forEach((item, index) => {
+    const displayText = item.street && item.settlement
+      ? `${item.street} — ${item.settlement}`
+      : item.street || item.settlement || "Об'єкт";
+
+    const listItem = document.createElement("li");
+    listItem.className = "map-search-results__item";
+    listItem.tabIndex = 0;
+    listItem.textContent = displayText;
+    listItem.addEventListener("click", () => {
+      selectSearchResult(item);
+      closeSearchResults();
+    });
+    listItem.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        selectSearchResult(item);
+        closeSearchResults();
+      }
+    });
+
+    list.appendChild(listItem);
+  });
+
+  searchResultsEl.appendChild(list);
+  searchResultsEl.hidden = false;
+}
+
+function closeSearchResults() {
+  if (!searchResultsEl) return;
+  searchResultsEl.innerHTML = "";
+  searchResultsEl.hidden = true;
+}
+
+function selectSearchResult(match) {
+  closeSearchResults();
+  const bounds = match.layer.getBounds?.() || match.layer.getLatLng?.();
+
   if (bounds) {
     if (typeof bounds.getCenter === "function" && typeof bounds.pad === "function") {
       map.fitBounds(bounds.pad(0.2), { maxZoom: 17 });
@@ -349,8 +398,8 @@ function runMapSearch() {
     }
   }
 
-  bestMatch.layer.openPopup();
-  setStatus(`Знайдено ${matches.length} об'єктів. Перший: ${title}`);
+  match.layer.openPopup();
+  setStatus(`Перейшли до ${match.street || match.settlement || "об'єкта"}.`);
 }
 
 function setStatus(message, isError = false) {
