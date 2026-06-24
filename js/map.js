@@ -25,6 +25,34 @@ L.tileLayer(MAP_CONFIG.tileUrl, {
 }).addTo(map);
 
 L.control.scale({ imperial: false }).addTo(map);
+
+const ukraineBounds = L.latLngBounds(
+  [45.9, 34.0],
+  [50.3, 40.9]
+);
+map.setMaxBounds(ukraineBounds);
+
+const donetskOutline = L.polygon(
+  [
+    [49.15, 36.15],
+    [49.20, 38.15],
+    [48.95, 39.50],
+    [48.30, 39.85],
+    [47.45, 39.65],
+    [47.15, 38.70],
+    [47.10, 37.35],
+    [47.55, 36.20],
+    [48.85, 36.10],
+  ],
+  {
+    color: "#dc2626",
+    weight: 4,
+    opacity: 0.85,
+    dashArray: "8, 6",
+    interactive: false,
+  }
+).addTo(map);
+
 map.setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
 
 attachSearchHandlers();
