@@ -287,27 +287,60 @@ function runMapSearch() {
   }
 
   const normalizedQuery = query.toLowerCase();
-  const matches = [];
+  const settlementMatches = [];
+  const streetMatches = [];
 
   geoJsonLayer.eachLayer((layer) => {
     const props = layer.feature?.properties || {};
     const street = (props["Вулиця"] || props.osm_street || "").toString().trim();
     const settlement = (props["Населений пункт"] || props["Громада"] || props.osm_city || "").toString().trim();
-    const address = `${street} ${settlement}`.toLowerCase();
+    const streetKey = street.toLowerCase();
+    const settlementKey = settlement.toLowerCase();
 
-    if (address.includes(normalizedQuery)) {
-      matches.push({ layer, title: street || settlement || "Об'єкт" });
+    const settlementMatch = settlementKey && settlementKey.includes(normalizedQuery);
+    const streetMatch = streetKey && streetKey.includes(normalizedQuery);
+
+    if (settlementMatch) {
+      const score = settlementKey === normalizedQuery ? 3 : settlementKey.startsWith(normalizedQuery) ? 2 : 1;
+      settlementMatches.push({ layer, street, settlement, score });
+    }
+
+    if (streetMatch) {
+      const score = streetKey === normalizedQuery ? 3 : streetKey.startsWith(normalizedQuery) ? 2 : 1;
+      streetMatches.push({ layer, street, settlement, score });
     }
   });
+
+  const useSettlementMatches = settlementMatches.length > 0;
+  const matches = useSettlementMatches ? settlementMatches : streetMatches;
 
   if (!matches.length) {
     setStatus(`Нічого не знайдено для "${query}".`);
     return;
   }
 
-  const { layer, title } = matches[0];
-  const bounds = layer.getBounds?.() || layer.getLatLng?.();
+  matches.sort((a, b) => b.score - a.score);
+  const bestMatch = matches[0];
+  const title = bestMatch.settlement || bestMatch.street || "Об'єкт";
 
+  if (useSettlementMatches) {
+    const settlementName = bestMatch.settlement;
+    const sameSettlementLayers = settlementMatches.filter((item) => item.settlement === settlementName).map((item) => item.layer);
+    const bounds = L.featureGroup(sameSettlementLayers).getBounds();
+
+    if (bounds.isValid()) {
+      map.fitBounds(bounds.pad(0.18), { maxZoom: 12 });
+    }
+
+    if (sameSettlementLayers.length) {
+      sameSettlementLayers[0].openPopup();
+    }
+
+    setStatus(`Знайдено ${sameSettlementLayers.length} об'єктів у ${settlementName}.`);
+    return;
+  }
+
+  const bounds = bestMatch.layer.getBounds?.() || bestMatch.layer.getLatLng?.();
   if (bounds) {
     if (typeof bounds.getCenter === "function" && typeof bounds.pad === "function") {
       map.fitBounds(bounds.pad(0.2), { maxZoom: 17 });
@@ -316,7 +349,7 @@ function runMapSearch() {
     }
   }
 
-  layer.openPopup();
+  bestMatch.layer.openPopup();
   setStatus(`Знайдено ${matches.length} об'єктів. Перший: ${title}`);
 }
 
