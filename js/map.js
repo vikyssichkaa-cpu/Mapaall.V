@@ -55,7 +55,8 @@ async function loadGeoJson() {
       map.setView(bounds.getCenter(), targetZoom);
 
       const paddedBounds = bounds.pad(MAP_CONFIG.maxBoundsPad);
-      map.setMaxBounds(paddedBounds);
+      // Allow zooming out past the feature bounds so the whole oblast can be viewed.
+      // map.setMaxBounds(paddedBounds);
       map.setMinZoom(Math.max(MAP_CONFIG.minZoom, targetZoom));
     }
 

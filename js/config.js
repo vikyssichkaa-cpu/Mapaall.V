@@ -3,7 +3,7 @@ export const MAP_CONFIG = {
   csvPath: "Зведна табличка проєкт - Зведена таблиця.csv",
   initialCenter: [48.0159, 37.8028],
   initialZoom: 13,
-  minZoom: 10,
+  minZoom: 5,
   maxZoom: 20,
   maxBoundsPad: 0.08,
   tileUrl: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
