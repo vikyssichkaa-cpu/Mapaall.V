@@ -16,6 +16,10 @@
         <h1>Donetsk Region Map</h1>
       </header>
       <main class="app__main">
+        <div class="map-search">
+          <input id="map-search-input" type="search" placeholder="Шукати вулицю або населений пункт..." aria-label="Пошук адреси або міста" />
+          <button id="map-search-button" type="button">Шукати</button>
+        </div>
         <div id="map" aria-label="Donetsk interactive map"></div>
         <div id="status" class="status status--visible" role="status" aria-live="polite">
           Loading data...
