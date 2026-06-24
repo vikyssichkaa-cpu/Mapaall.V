@@ -6,9 +6,9 @@ export const MAP_CONFIG = {
   minZoom: 3,
   maxZoom: 20,
   maxBoundsPad: 0.08,
-  tileUrl: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-  tileAttribution: "© OpenStreetMap contributors",
-  tileMaxNativeZoom: 19,
+  tileUrl: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+  tileAttribution:
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
 };
 
 export const FEATURE_STYLE = {

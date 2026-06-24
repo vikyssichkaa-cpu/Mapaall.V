@@ -1,12 +1,7 @@
 import { MAP_CONFIG, FEATURE_HOVER_STYLE } from "./config.js";
 
 const map = L.map("map", {
-  zoomControl: false,
-  scrollWheelZoom: true,
-  touchZoom: true,
-  doubleClickZoom: true,
-  zoomSnap: 0.5,
-  zoomDelta: 0.5,
+  zoomControl: true,
   minZoom: MAP_CONFIG.minZoom,
   maxZoom: MAP_CONFIG.maxZoom,
   maxBoundsViscosity: 1,
@@ -25,15 +20,12 @@ let maxStreetCount = 1;
 
 L.tileLayer(MAP_CONFIG.tileUrl, {
   attribution: MAP_CONFIG.tileAttribution,
-  subdomains: "abc",
+  subdomains: "abcd",
   maxZoom: MAP_CONFIG.maxZoom,
-  maxNativeZoom: MAP_CONFIG.tileMaxNativeZoom,
 }).addTo(map);
 
 L.control.scale({ imperial: false }).addTo(map);
-L.control.zoom({ position: "bottomright" }).addTo(map);
 map.setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
-map.scrollWheelZoom.enable();
 
 attachSearchHandlers();
 loadGeoJson();
