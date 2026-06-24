@@ -77,20 +77,6 @@ body {
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
 }
 
-.map-control {
-  display: flex;
-  align-items: center;
-  font-size: 13px;
-  color: #111827;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.map-control input {
-  margin: 0;
-  width: 16px;
-  height: 16px;
-}
 
 .map-search input {
   flex: 1;

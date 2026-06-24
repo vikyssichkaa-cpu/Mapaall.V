@@ -1,4 +1,4 @@
-import { MAP_CONFIG, FEATURE_HOVER_STYLE } from "./config.js";
+import { MAP_CONFIG } from "./config.js";
 
 const map = L.map("map", {
   zoomControl: true,
@@ -11,7 +11,6 @@ const map = L.map("map", {
 const statusEl = document.getElementById("status");
 const searchInput = document.getElementById("map-search-input");
 const searchButton = document.getElementById("map-search-button");
-const occupiedToggle = document.getElementById("filter-occupied-toggle");
 const searchResultsEl = document.getElementById("map-search-results");
 let geoJsonLayer;
 let currentGeoJson = null;
@@ -28,111 +27,72 @@ L.tileLayer(MAP_CONFIG.tileUrl, {
 
 L.control.scale({ imperial: false }).addTo(map);
 
-const donetskBounds = L.latLngBounds(
+const DONETSK_BOUNDS = L.latLngBounds(
   [46.88, 36.55],
   [49.05, 38.87]
 );
-map.setMaxBounds(donetskBounds.pad(0.07));
+map.setMaxBounds(DONETSK_BOUNDS);
 
 map.setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
 
 attachSearchHandlers();
 loadGeoJson();
 
-if (occupiedToggle) {
-  occupiedToggle.addEventListener("change", () => {
-    renderGeoJsonLayer();
-    setStatus(
-      occupiedToggle.checked
-        ? "Показано всі території, включно з окупованими."
-        : "Окуповані території приховано."
-    );
-  });
-}
-
-const OCCUPIED_AREA_BBOXES = [
-  { name: "Горлівка", lon: [37.95, 38.15], lat: [48.25, 48.40] },
-  { name: "Донецьк", lon: [37.70, 37.95], lat: [47.90, 48.10] },
-  { name: "Макіївка", lon: [37.40, 37.75], lat: [48.00, 48.20] },
-];
-
-const VALID_MAP_BOUNDS = {
-  lon: [36.55, 38.87],
-  lat: [46.88, 49.05],
-};
-
-const OCCUPIED_STYLE = {
-  color: "rgba(107, 114, 128, 0.7)",
-  weight: 3,
-  opacity: 0.78,
-  dashArray: "6, 5",
-};
-
-const OUT_OF_BOUNDS_STYLE = {
-  color: "rgba(220, 38, 38, 0.95)",
-  weight: 3,
-  opacity: 1,
-  dashArray: "8, 6",
-};
-
-function isOccupiedPoint([lng, lat]) {
-  return OCCUPIED_AREA_BBOXES.some((bbox) => {
-    return lng >= bbox.lon[0] && lng <= bbox.lon[1] && lat >= bbox.lat[0] && lat <= bbox.lat[1];
-  });
-}
-
-function isPointInValidBounds([lng, lat]) {
-  return (
-    lng >= VALID_MAP_BOUNDS.lon[0] &&
-    lng <= VALID_MAP_BOUNDS.lon[1] &&
-    lat >= VALID_MAP_BOUNDS.lat[0] &&
-    lat <= VALID_MAP_BOUNDS.lat[1]
-  );
-}
-
-function extractCoordinates(geometry) {
-  const coords = [];
-
-  function walk(points) {
-    if (!Array.isArray(points) || points.length === 0) {
-      return;
-    }
-    if (typeof points[0] === "number") {
-      coords.push(points);
-      return;
-    }
-    points.forEach(walk);
+function clampCoordinate(coordinate) {
+  if (!Array.isArray(coordinate) || typeof coordinate[0] !== "number" || typeof coordinate[1] !== "number") {
+    return coordinate;
   }
 
-  walk(geometry.coordinates || []);
-  return coords;
+  const lng = Math.min(DONETSK_BOUNDS.getEast(), Math.max(DONETSK_BOUNDS.getWest(), coordinate[0]));
+  const lat = Math.min(DONETSK_BOUNDS.getNorth(), Math.max(DONETSK_BOUNDS.getSouth(), coordinate[1]));
+  return [lng, lat, ...coordinate.slice(2)];
 }
 
-function getFeatureStatus(feature) {
-  if (!feature || !feature.geometry) {
-    return "unknown";
+function normalizeCoordinates(coordinates) {
+  if (!Array.isArray(coordinates) || coordinates.length === 0) {
+    return coordinates;
   }
 
-  const coords = extractCoordinates(feature.geometry);
-  const hasInvalid = coords.some((coord) => !isPointInValidBounds(coord));
-  if (hasInvalid) {
-    return "invalid";
+  if (typeof coordinates[0] === "number") {
+    return clampCoordinate(coordinates);
   }
 
-  const hasOccupied = coords.some(isOccupiedPoint);
-  if (hasOccupied) {
-    return "occupied";
-  }
-
-  return "normal";
+  return coordinates.map(normalizeCoordinates);
 }
 
-function isOccupiedFeature(feature) {
-  return getFeatureStatus(feature) === "occupied";
+function normalizeGeometry(geometry) {
+  if (!geometry || typeof geometry !== "object") {
+    return geometry;
+  }
+
+  if (geometry.type === "GeometryCollection" && Array.isArray(geometry.geometries)) {
+    return {
+      ...geometry,
+      geometries: geometry.geometries.map(normalizeGeometry),
+    };
+  }
+
+  return {
+    ...geometry,
+    coordinates: normalizeCoordinates(geometry.coordinates),
+  };
 }
 
-function isFeatureHiddenByToggle(feature) {
-  return occupiedToggle && !occupiedToggle.checked && isOccupiedFeature(feature);
+function normalizeGeoJson(geoJson) {
+  if (!geoJson || !Array.isArray(geoJson.features)) {
+    return geoJson;
+  }
+
+  return {
+    ...geoJson,
+    features: geoJson.features.map((feature) => {
+      if (!feature || !feature.geometry) return feature;
+      return {
+        ...feature,
+        geometry: normalizeGeometry(feature.geometry),
+      };
+    }),
+  };
 }
 
 async function loadGeoJson() {
@@ -147,7 +107,7 @@ async function loadGeoJson() {
     }
 
     const geoJson = await response.json();
-    currentGeoJson = geoJson;
+    currentGeoJson = normalizeGeoJson(geoJson);
     renderGeoJsonLayer();
 
     const featureCount = Array.isArray(currentGeoJson?.features) ? currentGeoJson.features.length : 0;
@@ -170,14 +130,10 @@ function renderGeoJsonLayer() {
   geoJsonLayer = L.geoJSON(currentGeoJson, {
     style: featureStyle,
     onEachFeature,
-    filter: (feature) => !isFeatureHiddenByToggle(feature),
   }).addTo(map);
 
   const totalFeatures = Array.isArray(currentGeoJson.features) ? currentGeoJson.features.length : 0;
-  const invalidCount = currentGeoJson.features.filter((feature) => getFeatureStatus(feature) === "invalid").length;
-  const occupiedCount = currentGeoJson.features.filter((feature) => getFeatureStatus(feature) === "occupied").length;
-  const hiddenText = occupiedToggle && !occupiedToggle.checked ? ` (${occupiedCount} окупованих приховано)` : "";
-  setStatus(`Loaded ${totalFeatures} objects${hiddenText}`);
+  setStatus(`Loaded ${totalFeatures} objects`);
 
   const bounds = geoJsonLayer.getBounds();
   if (bounds.isValid()) {
@@ -279,14 +235,6 @@ function featureStyle(feature) {
   const props = feature.properties || {};
   const street = props["Вулиця"] || props.osm_street || "Unknown";
   const streetCount = streetCounts.get(street) || 1;
-  const status = getFeatureStatus(feature);
-
-  if (status === "invalid") {
-    return OUT_OF_BOUNDS_STYLE;
-  }
-  if (status === "occupied") {
-    return OCCUPIED_STYLE;
-  }
 
   return {
     color: getLineColor(streetCount),
@@ -339,7 +287,6 @@ function onEachFeature(feature, layer) {
 
 function buildPopupHtml(feature) {
   const props = feature.properties || {};
-  const status = getFeatureStatus(feature);
   const id = props.ID || props.id || "";
   const csvProps = csvDataById.get(id) || {};
   const title = props["Вулиця"] || props.osm_name || props.osm_street || "Об'єкт";
@@ -361,16 +308,6 @@ function buildPopupHtml(feature) {
       <div class="popup-row">
         <span class="popup-key">Область</span>
         <span class="popup-value">${escapeHtml(area)}</span>
-      </div>
-      <div class="popup-row">
-        <span class="popup-key">Статус території</span>
-        <span class="popup-value">${escapeHtml(
-          status === "occupied"
-            ? "Окупована територія"
-            : status === "invalid"
-            ? "Поза межами Донецької області"
-            : "Контрольована Україною"
-        )}</span>
       </div>
       <div class="popup-row">
         <span class="popup-key">Кількість заяв</span>
