@@ -257,7 +257,22 @@ function getLineColor(count) {
   return colors[index];
 }
 
+function getFeatureId(feature) {
+  const props = feature?.properties || {};
+  return props.ID || props.id || props["ID"] || "";
+}
+
 function onEachFeature(feature, layer) {
+  const featureId = getFeatureId(feature);
+  if (featureId) {
+    layer.bindTooltip(String(featureId), {
+      permanent: true,
+      direction: "top",
+      className: "feature-id-tooltip",
+      offset: [0, -6],
+    });
+  }
+
   layer.bindPopup(buildPopupHtml(feature), { maxWidth: 360 });
 
   layer.on({
@@ -283,7 +298,7 @@ function onEachFeature(feature, layer) {
 
 function buildPopupHtml(feature) {
   const props = feature.properties || {};
-  const id = props.ID || props.id || "";
+  const id = getFeatureId(feature);
   const csvProps = csvDataById.get(id) || {};
   const title = props["Вулиця"] || props.osm_name || props.osm_street || "Об'єкт";
   const subtitle = props["Населений пункт"] || props["Громада"] || "Донецька обл.";
@@ -300,6 +315,10 @@ function buildPopupHtml(feature) {
           <div class="popup-title">${escapeHtml(title)}</div>
           <div class="popup-subtitle">${escapeHtml(subtitle)}</div>
         </div>
+      </div>
+      <div class="popup-row">
+        <span class="popup-key">ID</span>
+        <span class="popup-value">${escapeHtml(String(id || "—"))}</span>
       </div>
       <div class="popup-row">
         <span class="popup-key">Область</span>
