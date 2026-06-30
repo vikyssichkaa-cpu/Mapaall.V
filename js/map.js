@@ -530,9 +530,10 @@ function buildPopupHtml(feature) {
   const props = feature.properties || {};
   const id = getFeatureId(feature);
   const csvProps = csvDataById.get(id) || {};
-  const title = props["Вулиця"] || props.osm_name || props.osm_street || "Об'єкт";
-  const subtitleBase = props["Населений пункт"] || props["Громада"] || "Донецька обл.";
-  const subtitle = subtitleBase;
+  const title = csvProps["Вулиця"] || props["Вулиця"] || props.osm_name || props.osm_street || "Об'єкт";
+  const community = csvProps["Громада"] || props["Громада"] || "Донецька обл.";
+  const settlement = csvProps["Населений пункт"] || props["Населений пункт"] || "";
+  const subtitle = [community, settlement].filter(Boolean).join(" · ");
 
   const area = props["Область"] || csvProps["Область"] || "Донецька обл.";
   const claimCount = csvProps["COUNTA of Тип заяви"] || csvProps["Тип заяви"] || "1";
@@ -550,6 +551,18 @@ function buildPopupHtml(feature) {
       <div class="popup-row">
         <span class="popup-key">Область</span>
         <span class="popup-value">${escapeHtml(area)}</span>
+      </div>
+      <div class="popup-row">
+        <span class="popup-key">Громада</span>
+        <span class="popup-value">${escapeHtml(community)}</span>
+      </div>
+      <div class="popup-row">
+        <span class="popup-key">Населений пункт</span>
+        <span class="popup-value">${escapeHtml(settlement || "—")}</span>
+      </div>
+      <div class="popup-row">
+        <span class="popup-key">Вулиця</span>
+        <span class="popup-value">${escapeHtml(title)}</span>
       </div>
       <div class="popup-row">
         <span class="popup-key">Кількість заяв</span>
