@@ -137,14 +137,179 @@ function getGeometryLength(geometry) {
   return Infinity;
 }
 
-function filterStreetGeoJson(geoJson) {
+function getLineReferencePoints(coordinates) {
+  if (!Array.isArray(coordinates) || coordinates.length === 0) {
+    return [];
+  }
+
+  const first = coordinates[0];
+  const middle = coordinates[Math.floor(coordinates.length / 2)];
+  const last = coordinates[coordinates.length - 1];
+
+  let minLng = Number.POSITIVE_INFINITY;
+  let minLat = Number.POSITIVE_INFINITY;
+  let maxLng = Number.NEGATIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
+
+  coordinates.forEach((coordinate) => {
+    if (!Array.isArray(coordinate)) {
+      return;
+    }
+
+    minLng = Math.min(minLng, Number(coordinate[0]));
+    minLat = Math.min(minLat, Number(coordinate[1]));
+    maxLng = Math.max(maxLng, Number(coordinate[0]));
+    maxLat = Math.max(maxLat, Number(coordinate[1]));
+  });
+
+  const center = Number.isFinite(minLng) && Number.isFinite(minLat) && Number.isFinite(maxLng) && Number.isFinite(maxLat)
+    ? [(minLng + maxLng) / 2, (minLat + maxLat) / 2]
+    : null;
+
+  return [first, middle, last, center].filter(
+    (coordinate) => Array.isArray(coordinate) && coordinate.length >= 2
+  );
+}
+
+function getGeometryReferencePoints(geometry) {
+  if (!geometry || typeof geometry !== "object") {
+    return [];
+  }
+
+  if (geometry.type === "LineString") {
+    return getLineReferencePoints(geometry.coordinates);
+  }
+
+  if (geometry.type === "MultiLineString" && Array.isArray(geometry.coordinates)) {
+    return geometry.coordinates.flatMap(getLineReferencePoints);
+  }
+
+  return [];
+}
+
+function pointInRing(point, ring) {
+  if (!Array.isArray(point) || !Array.isArray(ring) || ring.length < 3) {
+    return false;
+  }
+
+  const x = Number(point[0]);
+  const y = Number(point[1]);
+  let inside = false;
+
+  for (let index = 0, previousIndex = ring.length - 1; index < ring.length; previousIndex = index, index += 1) {
+    const current = ring[index];
+    const previous = ring[previousIndex];
+    if (!Array.isArray(current) || !Array.isArray(previous)) {
+      continue;
+    }
+
+    const currentX = Number(current[0]);
+    const currentY = Number(current[1]);
+    const previousX = Number(previous[0]);
+    const previousY = Number(previous[1]);
+    const crossesLatitude = (currentY > y) !== (previousY > y);
+
+    if (!crossesLatitude) {
+      continue;
+    }
+
+    const edgeSlope = (previousX - currentX) * (y - currentY);
+    const edgeHeight = (previousY - currentY) || 1e-12;
+    const intersectionX = edgeSlope / edgeHeight + currentX;
+    if (x < intersectionX) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+function pointInPolygon(point, polygon) {
+  if (!Array.isArray(polygon) || polygon.length === 0) {
+    return false;
+  }
+
+  if (!pointInRing(point, polygon[0])) {
+    return false;
+  }
+
+  return !polygon.slice(1).some((ring) => pointInRing(point, ring));
+}
+
+function buildBoundaryPolygonIndex(boundaryGeoJson) {
+  const polygons = boundaryGeoJson?.features?.flatMap((feature) => {
+    const geometry = feature?.geometry;
+    if (!geometry) {
+      return [];
+    }
+
+    if (geometry.type === "Polygon") {
+      return [geometry.coordinates];
+    }
+
+    if (geometry.type === "MultiPolygon") {
+      return geometry.coordinates;
+    }
+
+    return [];
+  }) || [];
+
+  return polygons.map((polygon) => {
+    let minLng = Number.POSITIVE_INFINITY;
+    let minLat = Number.POSITIVE_INFINITY;
+    let maxLng = Number.NEGATIVE_INFINITY;
+    let maxLat = Number.NEGATIVE_INFINITY;
+
+    polygon.forEach((ring) => {
+      ring.forEach((coordinate) => {
+        minLng = Math.min(minLng, Number(coordinate[0]));
+        minLat = Math.min(minLat, Number(coordinate[1]));
+        maxLng = Math.max(maxLng, Number(coordinate[0]));
+        maxLat = Math.max(maxLat, Number(coordinate[1]));
+      });
+    });
+
+    return {
+      polygon,
+      bbox: [minLng, minLat, maxLng, maxLat],
+    };
+  });
+}
+
+function pointInBoundary(point, boundaryIndex) {
+  return boundaryIndex.some(({ polygon, bbox }) => {
+    const [minLng, minLat, maxLng, maxLat] = bbox;
+    const lng = Number(point[0]);
+    const lat = Number(point[1]);
+    if (lng < minLng || lng > maxLng || lat < minLat || lat > maxLat) {
+      return false;
+    }
+
+    return pointInPolygon(point, polygon);
+  });
+}
+
+function filterStreetGeoJson(geoJson, boundaryGeoJson) {
   if (!geoJson || !Array.isArray(geoJson.features)) {
     return geoJson;
   }
 
+  const boundaryIndex = buildBoundaryPolygonIndex(boundaryGeoJson);
+
   return {
     ...geoJson,
-    features: geoJson.features.filter((feature) => getGeometryLength(feature?.geometry) >= MIN_STREET_GEOMETRY_LENGTH),
+    features: geoJson.features.filter((feature) => {
+      if (getGeometryLength(feature?.geometry) < MIN_STREET_GEOMETRY_LENGTH) {
+        return false;
+      }
+
+      if (!boundaryIndex.length) {
+        return true;
+      }
+
+      const referencePoints = getGeometryReferencePoints(feature?.geometry);
+      return referencePoints.some((point) => pointInBoundary(point, boundaryIndex));
+    }),
   };
 }
 
@@ -172,8 +337,8 @@ async function loadGeoJson() {
       boundaryResponse.json(),
     ]);
 
-    currentGeoJson = filterStreetGeoJson(normalizeGeoJson(geoJson));
     currentBoundaryGeoJson = normalizeGeoJson(boundaryGeoJson);
+    currentGeoJson = filterStreetGeoJson(normalizeGeoJson(geoJson), currentBoundaryGeoJson);
     renderGeoJsonLayer();
 
     const featureCount = Array.isArray(currentGeoJson?.features) ? currentGeoJson.features.length : 0;
