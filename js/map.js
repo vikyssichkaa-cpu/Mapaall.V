@@ -4,6 +4,8 @@ const map = L.map("map", {
   zoomControl: true,
   minZoom: MAP_CONFIG.minZoom,
   maxZoom: MAP_CONFIG.maxZoom,
+  zoomDelta: 0.5,
+  zoomSnap: 0.5,
   maxBoundsViscosity: 1,
   worldCopyJump: false,
 });
@@ -372,7 +374,7 @@ function renderGeoJsonLayer() {
 
   map.fitBounds(DONETSK_BOUNDS, {
     padding: [24, 24],
-    maxZoom: 8,
+    maxZoom: 7,
   });
   map.setMinZoom(MAP_CONFIG.minZoom);
 }
