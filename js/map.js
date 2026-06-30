@@ -263,6 +263,8 @@ function featureStyle(feature) {
     color: getLineColor(streetCount),
     weight: 2.8,
     opacity: 0.98,
+    lineCap: "butt",
+    lineJoin: "miter",
   };
 }
 
@@ -273,6 +275,8 @@ function boundaryStyle() {
     opacity: 0.9,
     fillOpacity: 0,
     dashArray: "6 4",
+    lineCap: "butt",
+    lineJoin: "miter",
   };
 }
 
