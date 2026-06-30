@@ -603,6 +603,17 @@ function attachSearchHandlers() {
   });
 }
 
+function normalizeSearchString(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’'`]/g, "")
+    .replace(/[\-–—]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function runMapSearch() {
   if (!streetLayer) {
     setStatus("Завантаження карти ще не завершено, зачекайте.");
@@ -616,7 +627,7 @@ function runMapSearch() {
     return;
   }
 
-  const normalizedQuery = query.toLowerCase();
+  const normalizedQuery = normalizeSearchString(query);
   const settlementMatches = [];
   const streetMatches = [];
 
@@ -624,8 +635,8 @@ function runMapSearch() {
     const props = layer.feature?.properties || {};
     const street = (props["Вулиця"] || props.osm_street || "").toString().trim();
     const settlement = (props["Населений пункт"] || props["Громада"] || props.osm_city || "").toString().trim();
-    const streetKey = street.toLowerCase();
-    const settlementKey = settlement.toLowerCase();
+    const streetKey = normalizeSearchString(street);
+    const settlementKey = normalizeSearchString(settlement);
 
     const settlementMatch = settlementKey && settlementKey.includes(normalizedQuery);
     const streetMatch = streetKey && streetKey.includes(normalizedQuery);
