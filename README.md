@@ -2,6 +2,11 @@
 
 Static map project based on vanilla HTML/CSS/JS + Leaflet with CartoDB Positron Light tiles.
 
+The map uses two GeoJSON layers:
+
+- street geometries from `data/Data_fixed.geojson`
+- Donetsk oblast boundary from `data/donetsk_oblast_boundary.geojson`
+
 ## Structure
 
 - `index.html`
@@ -26,6 +31,4 @@ Then open:
 
 Upload the whole folder to your web server and open the URL of `index.html`.
 
-If you replace the data file, keep the same path:
-
-`data/Data.geojson`
+If you replace the street data or oblast boundary, keep the configured paths in `js/config.js` in sync.

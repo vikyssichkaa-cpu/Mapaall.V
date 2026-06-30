@@ -12,8 +12,10 @@ const statusEl = document.getElementById("status");
 const searchInput = document.getElementById("map-search-input");
 const searchButton = document.getElementById("map-search-button");
 const searchResultsEl = document.getElementById("map-search-results");
-let geoJsonLayer;
+let streetLayer;
+let boundaryLayer;
 let currentGeoJson = null;
+let currentBoundaryGeoJson = null;
 const idCounts = new Map();
 const csvDataById = new Map();
 const streetCounts = new Map();
@@ -101,20 +103,33 @@ async function loadGeoJson() {
   try {
     await loadCsvData();
 
-    const response = await fetch(MAP_CONFIG.geoJsonPath, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Failed to load GeoJSON: ${response.status}`);
+    const [streetResponse, boundaryResponse] = await Promise.all([
+      fetch(MAP_CONFIG.streetGeoJsonPath, { cache: "no-store" }),
+      fetch(MAP_CONFIG.boundaryGeoJsonPath, { cache: "no-store" }),
+    ]);
+
+    if (!streetResponse.ok) {
+      throw new Error(`Failed to load street GeoJSON: ${streetResponse.status}`);
     }
 
-    const geoJson = await response.json();
+    if (!boundaryResponse.ok) {
+      throw new Error(`Failed to load boundary GeoJSON: ${boundaryResponse.status}`);
+    }
+
+    const [geoJson, boundaryGeoJson] = await Promise.all([
+      streetResponse.json(),
+      boundaryResponse.json(),
+    ]);
+
     currentGeoJson = normalizeGeoJson(geoJson);
+    currentBoundaryGeoJson = normalizeGeoJson(boundaryGeoJson);
     renderGeoJsonLayer();
 
     const featureCount = Array.isArray(currentGeoJson?.features) ? currentGeoJson.features.length : 0;
     setStatus(`Loaded ${featureCount} objects`);
   } catch (error) {
     console.error(error);
-    setStatus(`GeoJSON loading error. Check ${MAP_CONFIG.geoJsonPath}`, true);
+    setStatus("GeoJSON loading error. Check configured data paths", true);
   }
 }
 
@@ -123,14 +138,26 @@ function renderGeoJsonLayer() {
     return;
   }
 
-  if (geoJsonLayer) {
-    geoJsonLayer.remove();
+  if (streetLayer) {
+    streetLayer.remove();
   }
 
-  geoJsonLayer = L.geoJSON(currentGeoJson, {
+  streetLayer = L.geoJSON(currentGeoJson, {
     style: featureStyle,
     onEachFeature,
   }).addTo(map);
+
+  if (boundaryLayer) {
+    boundaryLayer.remove();
+  }
+
+  if (currentBoundaryGeoJson) {
+    boundaryLayer = L.geoJSON(currentBoundaryGeoJson, {
+      style: boundaryStyle,
+      interactive: false,
+    }).addTo(map);
+    boundaryLayer.bringToBack();
+  }
 
   const totalFeatures = Array.isArray(currentGeoJson.features) ? currentGeoJson.features.length : 0;
   setStatus(`Loaded ${totalFeatures} objects`);
@@ -239,6 +266,16 @@ function featureStyle(feature) {
   };
 }
 
+function boundaryStyle() {
+  return {
+    color: "#2f6fab",
+    weight: 2,
+    opacity: 0.9,
+    fillOpacity: 0,
+    dashArray: "6 4",
+  };
+}
+
 function getLineColor(count) {
   const colors = [
     "rgba(255, 0, 0, 0.20)",
@@ -279,8 +316,8 @@ function onEachFeature(feature, layer) {
       event.target.bringToFront();
     },
     mouseout(event) {
-      if (geoJsonLayer) {
-        geoJsonLayer.resetStyle(event.target);
+      if (streetLayer) {
+        streetLayer.resetStyle(event.target);
       }
     },
   });
