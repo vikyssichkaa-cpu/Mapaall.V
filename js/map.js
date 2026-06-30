@@ -17,7 +17,6 @@ let boundaryLayer;
 let currentGeoJson = null;
 let currentBoundaryGeoJson = null;
 const MIN_STREET_GEOMETRY_LENGTH = 0.001;
-const STREET_VISIBILITY_MIN_ZOOM = 10;
 const idCounts = new Map();
 const csvDataById = new Map();
 const streetCounts = new Map();
@@ -38,7 +37,6 @@ const DONETSK_BOUNDS = L.latLngBounds(
 map.setMaxBounds(DONETSK_BOUNDS);
 
 map.setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
-map.on("zoomend", updateStreetLayerVisibility);
 
 attachSearchHandlers();
 loadGeoJson();
@@ -376,7 +374,6 @@ function renderGeoJsonLayer() {
   }
 
   const totalFeatures = Array.isArray(currentGeoJson.features) ? currentGeoJson.features.length : 0;
-  updateStreetLayerVisibility();
   setStatus(`Loaded ${totalFeatures} objects`);
 
   map.fitBounds(DONETSK_BOUNDS, {
@@ -495,24 +492,6 @@ function boundaryStyle() {
     lineCap: "butt",
     lineJoin: "miter",
   };
-}
-
-function updateStreetLayerVisibility() {
-  if (!streetLayer) {
-    return;
-  }
-
-  const shouldShowStreetLayer = map.getZoom() >= STREET_VISIBILITY_MIN_ZOOM;
-  if (shouldShowStreetLayer) {
-    if (!map.hasLayer(streetLayer)) {
-      streetLayer.addTo(map);
-    }
-    return;
-  }
-
-  if (map.hasLayer(streetLayer)) {
-    streetLayer.remove();
-  }
 }
 
 function getLineColor(count) {
