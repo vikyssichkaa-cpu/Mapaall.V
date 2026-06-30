@@ -365,19 +365,14 @@ function renderGeoJsonLayer() {
     boundaryLayer.remove();
   }
 
-  if (currentBoundaryGeoJson) {
-    boundaryLayer = L.geoJSON(currentBoundaryGeoJson, {
-      style: boundaryStyle,
-      interactive: false,
-    }).addTo(map);
-    boundaryLayer.bringToBack();
-  }
+  boundaryLayer = null;
 
   const totalFeatures = Array.isArray(currentGeoJson.features) ? currentGeoJson.features.length : 0;
   setStatus(`Loaded ${totalFeatures} objects`);
 
   map.fitBounds(DONETSK_BOUNDS, {
-    maxZoom: MAP_CONFIG.maxZoom,
+    padding: [24, 24],
+    maxZoom: 8,
   });
   map.setMinZoom(MAP_CONFIG.minZoom);
 }
@@ -482,18 +477,6 @@ function featureStyle(feature) {
   };
 }
 
-function boundaryStyle() {
-  return {
-    color: "#2f6fab",
-    weight: 2,
-    opacity: 0.9,
-    fillOpacity: 0,
-    dashArray: "6 4",
-    lineCap: "butt",
-    lineJoin: "miter",
-  };
-}
-
 function getLineColor(count) {
   const colors = [
     "rgba(255, 0, 0, 0.20)",
@@ -547,7 +530,7 @@ function buildPopupHtml(feature) {
   const csvProps = csvDataById.get(id) || {};
   const title = props["Вулиця"] || props.osm_name || props.osm_street || "Об'єкт";
   const subtitleBase = props["Населений пункт"] || props["Громада"] || "Донецька обл.";
-  const subtitle = id ? `${subtitleBase} · ID ${id}` : subtitleBase;
+  const subtitle = subtitleBase;
 
   const area = props["Область"] || csvProps["Область"] || "Донецька обл.";
   const claimCount = csvProps["COUNTA of Тип заяви"] || csvProps["Тип заяви"] || "1";

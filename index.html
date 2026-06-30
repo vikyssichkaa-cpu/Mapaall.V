@@ -15,12 +15,14 @@
       <header class="app__header">
         <h1>Donetsk Region Map</h1>
       </header>
-      <main class="app__main">
+      <div class="app__toolbar">
         <div class="map-search">
           <input id="map-search-input" type="search" placeholder="Шукати вулицю або населений пункт..." aria-label="Пошук адреси або міста" />
           <button id="map-search-button" type="button">Шукати</button>
           <div id="map-search-results" class="map-search-results" hidden></div>
         </div>
+      </div>
+      <main class="app__main">
         <div id="map" aria-label="Donetsk interactive map"></div>
         <div id="status" class="status status--visible" role="status" aria-live="polite">
           Loading data...
