@@ -16,6 +16,8 @@ let streetLayer;
 let boundaryLayer;
 let currentGeoJson = null;
 let currentBoundaryGeoJson = null;
+const MIN_STREET_GEOMETRY_LENGTH = 0.001;
+const STREET_VISIBILITY_MIN_ZOOM = 10;
 const idCounts = new Map();
 const csvDataById = new Map();
 const streetCounts = new Map();
@@ -36,6 +38,7 @@ const DONETSK_BOUNDS = L.latLngBounds(
 map.setMaxBounds(DONETSK_BOUNDS);
 
 map.setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
+map.on("zoomend", updateStreetLayerVisibility);
 
 attachSearchHandlers();
 loadGeoJson();
@@ -97,6 +100,54 @@ function normalizeGeoJson(geoJson) {
   };
 }
 
+function getLineLength(coordinates) {
+  if (!Array.isArray(coordinates) || coordinates.length < 2) {
+    return 0;
+  }
+
+  let total = 0;
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const previous = coordinates[index - 1];
+    const current = coordinates[index];
+    if (!Array.isArray(previous) || !Array.isArray(current)) {
+      continue;
+    }
+
+    const deltaX = Number(current[0]) - Number(previous[0]);
+    const deltaY = Number(current[1]) - Number(previous[1]);
+    total += Math.hypot(deltaX, deltaY);
+  }
+
+  return total;
+}
+
+function getGeometryLength(geometry) {
+  if (!geometry || typeof geometry !== "object") {
+    return 0;
+  }
+
+  if (geometry.type === "LineString") {
+    return getLineLength(geometry.coordinates);
+  }
+
+  if (geometry.type === "MultiLineString" && Array.isArray(geometry.coordinates)) {
+    return geometry.coordinates.reduce((sum, line) => sum + getLineLength(line), 0);
+  }
+
+  return Infinity;
+}
+
+function filterStreetGeoJson(geoJson) {
+  if (!geoJson || !Array.isArray(geoJson.features)) {
+    return geoJson;
+  }
+
+  return {
+    ...geoJson,
+    features: geoJson.features.filter((feature) => getGeometryLength(feature?.geometry) >= MIN_STREET_GEOMETRY_LENGTH),
+  };
+}
+
 async function loadGeoJson() {
   setStatus("Loading map objects...");
 
@@ -121,7 +172,7 @@ async function loadGeoJson() {
       boundaryResponse.json(),
     ]);
 
-    currentGeoJson = normalizeGeoJson(geoJson);
+    currentGeoJson = filterStreetGeoJson(normalizeGeoJson(geoJson));
     currentBoundaryGeoJson = normalizeGeoJson(boundaryGeoJson);
     renderGeoJsonLayer();
 
@@ -160,6 +211,7 @@ function renderGeoJsonLayer() {
   }
 
   const totalFeatures = Array.isArray(currentGeoJson.features) ? currentGeoJson.features.length : 0;
+  updateStreetLayerVisibility();
   setStatus(`Loaded ${totalFeatures} objects`);
 
   map.fitBounds(DONETSK_BOUNDS, {
@@ -278,6 +330,24 @@ function boundaryStyle() {
     lineCap: "butt",
     lineJoin: "miter",
   };
+}
+
+function updateStreetLayerVisibility() {
+  if (!streetLayer) {
+    return;
+  }
+
+  const shouldShowStreetLayer = map.getZoom() >= STREET_VISIBILITY_MIN_ZOOM;
+  if (shouldShowStreetLayer) {
+    if (!map.hasLayer(streetLayer)) {
+      streetLayer.addTo(map);
+    }
+    return;
+  }
+
+  if (map.hasLayer(streetLayer)) {
+    streetLayer.remove();
+  }
 }
 
 function getLineColor(count) {
@@ -405,7 +475,7 @@ function attachSearchHandlers() {
 }
 
 function runMapSearch() {
-  if (!geoJsonLayer) {
+  if (!streetLayer) {
     setStatus("Завантаження карти ще не завершено, зачекайте.");
     return;
   }
@@ -421,7 +491,7 @@ function runMapSearch() {
   const settlementMatches = [];
   const streetMatches = [];
 
-  geoJsonLayer.eachLayer((layer) => {
+  streetLayer.eachLayer((layer) => {
     const props = layer.feature?.properties || {};
     const street = (props["Вулиця"] || props.osm_street || "").toString().trim();
     const settlement = (props["Населений пункт"] || props["Громада"] || props.osm_city || "").toString().trim();
