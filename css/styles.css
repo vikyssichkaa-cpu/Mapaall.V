@@ -17,6 +17,8 @@ body {
 }
 
 .app__toolbar {
+  position: relative;
+  z-index: 2000;
   padding: 12px 16px;
   background: #ffffff;
   border-bottom: 1px solid #e5e7eb;
@@ -61,7 +63,7 @@ body {
 
 .map-search {
   position: relative;
-  z-index: 20;
+  z-index: 2100;
   display: flex;
   align-items: center;
   gap: 8px;
