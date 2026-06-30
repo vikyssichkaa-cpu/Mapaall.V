@@ -6,7 +6,7 @@ const map = L.map("map", {
   maxZoom: MAP_CONFIG.maxZoom,
   zoomDelta: 0.5,
   zoomSnap: 0.5,
-  maxBoundsViscosity: 1,
+  maxBoundsViscosity: 0.35,
   worldCopyJump: false,
 });
 
@@ -36,7 +36,7 @@ const DONETSK_BOUNDS = L.latLngBounds(
   [46.88, 36.55],
   [49.05, 38.87]
 );
-map.setMaxBounds(DONETSK_BOUNDS);
+map.setMaxBounds(DONETSK_BOUNDS.pad(MAP_CONFIG.maxBoundsPad));
 
 map.setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
 
