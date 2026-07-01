@@ -1,2 +1,31 @@
 .DS_Store
 Mapaall.V/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Everything below is NOT needed to display the map on the web interface.
+# The deployed site only needs:
+#   index.html, css/styles.css, js/config.js, js/map.js, data/Data_regeocoded.geojson
+# (Leaflet + markercluster load from CDN.) Everything else is data-processing /
+# source / build tooling and is kept locally but out of the repo.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Python tooling & the offline geocoder workspace
+__pycache__/
+*.pyc
+*.py
+don_geocode/
+
+# Source / intermediate / report data (frontend loads only data/Data_regeocoded.geojson)
+*.csv
+errors.json
+data/Data.geojson
+data/Data_fixed.geojson
+data/Data_settlement_fixed.geojson
+data/Data_settlement_fixed.geojson.bak
+data/donetsk_oblast_boundary.geojson
+data/donetsk_boundaries.geojson
+data/settlement_fix_report.json
+data/regeocode_report.json
+
+# Visualizations / screenshots
+*.png

@@ -1,4 +1,9 @@
-import { MAP_CONFIG } from "./config.js";
+import {
+  MAP_CONFIG,
+  LINE_BASE_STYLE,
+  LINE_HOVER_STYLE,
+  SELECTION_LINE_STYLE,
+} from "./config.js?v=3";
 
 const map = L.map("map", {
   zoomControl: true,
@@ -14,15 +19,19 @@ const statusEl = document.getElementById("status");
 const searchInput = document.getElementById("map-search-input");
 const searchButton = document.getElementById("map-search-button");
 const searchResultsEl = document.getElementById("map-search-results");
+
 let streetLayer;
-let boundaryLayer;
+let approxCluster;
+let selectionLayer;
 let currentGeoJson = null;
-let currentBoundaryGeoJson = null;
-const MIN_STREET_GEOMETRY_LENGTH = 0.001;
-const idCounts = new Map();
-const csvDataById = new Map();
-const streetCounts = new Map();
-let maxStreetCount = 1;
+let maxClaimCount = 1;
+let selectedId = null;
+
+// Selection / disambiguation indexes, keyed by the feature's stable ID.
+const layersById = new Map(); // id -> Leaflet layer
+const featureById = new Map(); // id -> GeoJSON feature
+const geomKeyById = new Map(); // id -> geometry signature
+const idsByGeomKey = new Map(); // geometry signature -> [id, ...]
 
 L.tileLayer(MAP_CONFIG.tileUrl, {
   attribution: MAP_CONFIG.tileAttribution,
@@ -32,22 +41,19 @@ L.tileLayer(MAP_CONFIG.tileUrl, {
 
 L.control.scale({ imperial: false }).addTo(map);
 
-const DONETSK_BOUNDS = L.latLngBounds(
-  [46.88, 36.55],
-  [49.05, 38.87]
-);
+const DONETSK_BOUNDS = L.latLngBounds([46.88, 36.55], [49.05, 38.87]);
 map.setMaxBounds(DONETSK_BOUNDS.pad(MAP_CONFIG.maxBoundsPad));
-
 map.setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
 
 attachSearchHandlers();
 loadGeoJson();
 
+// ── Coordinate normalization / boundary filtering ─────────────────────────────
+
 function clampCoordinate(coordinate) {
   if (!Array.isArray(coordinate) || typeof coordinate[0] !== "number" || typeof coordinate[1] !== "number") {
     return coordinate;
   }
-
   const lng = Math.min(DONETSK_BOUNDS.getEast(), Math.max(DONETSK_BOUNDS.getWest(), coordinate[0]));
   const lat = Math.min(DONETSK_BOUNDS.getNorth(), Math.max(DONETSK_BOUNDS.getSouth(), coordinate[1]));
   return [lng, lat, ...coordinate.slice(2)];
@@ -57,11 +63,9 @@ function normalizeCoordinates(coordinates) {
   if (!Array.isArray(coordinates) || coordinates.length === 0) {
     return coordinates;
   }
-
   if (typeof coordinates[0] === "number") {
     return clampCoordinate(coordinates);
   }
-
   return coordinates.map(normalizeCoordinates);
 }
 
@@ -69,475 +73,352 @@ function normalizeGeometry(geometry) {
   if (!geometry || typeof geometry !== "object") {
     return geometry;
   }
-
   if (geometry.type === "GeometryCollection" && Array.isArray(geometry.geometries)) {
-    return {
-      ...geometry,
-      geometries: geometry.geometries.map(normalizeGeometry),
-    };
+    return { ...geometry, geometries: geometry.geometries.map(normalizeGeometry) };
   }
-
-  return {
-    ...geometry,
-    coordinates: normalizeCoordinates(geometry.coordinates),
-  };
+  return { ...geometry, coordinates: normalizeCoordinates(geometry.coordinates) };
 }
 
 function normalizeGeoJson(geoJson) {
   if (!geoJson || !Array.isArray(geoJson.features)) {
     return geoJson;
   }
-
   return {
     ...geoJson,
     features: geoJson.features.map((feature) => {
       if (!feature || !feature.geometry) return feature;
-      return {
-        ...feature,
-        geometry: normalizeGeometry(feature.geometry),
-      };
+      return { ...feature, geometry: normalizeGeometry(feature.geometry) };
     }),
   };
 }
 
-function getLineLength(coordinates) {
-  if (!Array.isArray(coordinates) || coordinates.length < 2) {
-    return 0;
+// The re-geocoded data is already clean and anchored to Donetsk settlements, so
+// we only drop features with no renderable geometry. (The old length/boundary
+// filters wrongly hid short real streets and legit border towns like Сіверськ.)
+function hasRenderableGeometry(geometry) {
+  if (!geometry || typeof geometry !== "object") return false;
+  const { type, coordinates } = geometry;
+  if (type === "Point") {
+    return Array.isArray(coordinates) && typeof coordinates[0] === "number";
   }
-
-  let total = 0;
-  for (let index = 1; index < coordinates.length; index += 1) {
-    const previous = coordinates[index - 1];
-    const current = coordinates[index];
-    if (!Array.isArray(previous) || !Array.isArray(current)) {
-      continue;
-    }
-
-    const deltaX = Number(current[0]) - Number(previous[0]);
-    const deltaY = Number(current[1]) - Number(previous[1]);
-    total += Math.hypot(deltaX, deltaY);
+  if (type === "LineString") {
+    return Array.isArray(coordinates) && coordinates.length >= 2;
   }
-
-  return total;
+  if (type === "MultiLineString") {
+    return Array.isArray(coordinates) && coordinates.some((line) => Array.isArray(line) && line.length >= 2);
+  }
+  return false;
 }
 
-function getGeometryLength(geometry) {
-  if (!geometry || typeof geometry !== "object") {
-    return 0;
-  }
-
-  if (geometry.type === "LineString") {
-    return getLineLength(geometry.coordinates);
-  }
-
-  if (geometry.type === "MultiLineString" && Array.isArray(geometry.coordinates)) {
-    return geometry.coordinates.reduce((sum, line) => sum + getLineLength(line), 0);
-  }
-
-  return Infinity;
-}
-
-function getLineReferencePoints(coordinates) {
-  if (!Array.isArray(coordinates) || coordinates.length === 0) {
-    return [];
-  }
-
-  const first = coordinates[0];
-  const middle = coordinates[Math.floor(coordinates.length / 2)];
-  const last = coordinates[coordinates.length - 1];
-
-  let minLng = Number.POSITIVE_INFINITY;
-  let minLat = Number.POSITIVE_INFINITY;
-  let maxLng = Number.NEGATIVE_INFINITY;
-  let maxLat = Number.NEGATIVE_INFINITY;
-
-  coordinates.forEach((coordinate) => {
-    if (!Array.isArray(coordinate)) {
-      return;
-    }
-
-    minLng = Math.min(minLng, Number(coordinate[0]));
-    minLat = Math.min(minLat, Number(coordinate[1]));
-    maxLng = Math.max(maxLng, Number(coordinate[0]));
-    maxLat = Math.max(maxLat, Number(coordinate[1]));
-  });
-
-  const center = Number.isFinite(minLng) && Number.isFinite(minLat) && Number.isFinite(maxLng) && Number.isFinite(maxLat)
-    ? [(minLng + maxLng) / 2, (minLat + maxLat) / 2]
-    : null;
-
-  return [first, middle, last, center].filter(
-    (coordinate) => Array.isArray(coordinate) && coordinate.length >= 2
-  );
-}
-
-function getGeometryReferencePoints(geometry) {
-  if (!geometry || typeof geometry !== "object") {
-    return [];
-  }
-
-  if (geometry.type === "LineString") {
-    return getLineReferencePoints(geometry.coordinates);
-  }
-
-  if (geometry.type === "MultiLineString" && Array.isArray(geometry.coordinates)) {
-    return geometry.coordinates.flatMap(getLineReferencePoints);
-  }
-
-  return [];
-}
-
-function pointInRing(point, ring) {
-  if (!Array.isArray(point) || !Array.isArray(ring) || ring.length < 3) {
-    return false;
-  }
-
-  const x = Number(point[0]);
-  const y = Number(point[1]);
-  let inside = false;
-
-  for (let index = 0, previousIndex = ring.length - 1; index < ring.length; previousIndex = index, index += 1) {
-    const current = ring[index];
-    const previous = ring[previousIndex];
-    if (!Array.isArray(current) || !Array.isArray(previous)) {
-      continue;
-    }
-
-    const currentX = Number(current[0]);
-    const currentY = Number(current[1]);
-    const previousX = Number(previous[0]);
-    const previousY = Number(previous[1]);
-    const crossesLatitude = (currentY > y) !== (previousY > y);
-
-    if (!crossesLatitude) {
-      continue;
-    }
-
-    const edgeSlope = (previousX - currentX) * (y - currentY);
-    const edgeHeight = (previousY - currentY) || 1e-12;
-    const intersectionX = edgeSlope / edgeHeight + currentX;
-    if (x < intersectionX) {
-      inside = !inside;
-    }
-  }
-
-  return inside;
-}
-
-function pointInPolygon(point, polygon) {
-  if (!Array.isArray(polygon) || polygon.length === 0) {
-    return false;
-  }
-
-  if (!pointInRing(point, polygon[0])) {
-    return false;
-  }
-
-  return !polygon.slice(1).some((ring) => pointInRing(point, ring));
-}
-
-function buildBoundaryPolygonIndex(boundaryGeoJson) {
-  const polygons = boundaryGeoJson?.features?.flatMap((feature) => {
-    const geometry = feature?.geometry;
-    if (!geometry) {
-      return [];
-    }
-
-    if (geometry.type === "Polygon") {
-      return [geometry.coordinates];
-    }
-
-    if (geometry.type === "MultiPolygon") {
-      return geometry.coordinates;
-    }
-
-    return [];
-  }) || [];
-
-  return polygons.map((polygon) => {
-    let minLng = Number.POSITIVE_INFINITY;
-    let minLat = Number.POSITIVE_INFINITY;
-    let maxLng = Number.NEGATIVE_INFINITY;
-    let maxLat = Number.NEGATIVE_INFINITY;
-
-    polygon.forEach((ring) => {
-      ring.forEach((coordinate) => {
-        minLng = Math.min(minLng, Number(coordinate[0]));
-        minLat = Math.min(minLat, Number(coordinate[1]));
-        maxLng = Math.max(maxLng, Number(coordinate[0]));
-        maxLat = Math.max(maxLat, Number(coordinate[1]));
-      });
-    });
-
-    return {
-      polygon,
-      bbox: [minLng, minLat, maxLng, maxLat],
-    };
-  });
-}
-
-function pointInBoundary(point, boundaryIndex) {
-  return boundaryIndex.some(({ polygon, bbox }) => {
-    const [minLng, minLat, maxLng, maxLat] = bbox;
-    const lng = Number(point[0]);
-    const lat = Number(point[1]);
-    if (lng < minLng || lng > maxLng || lat < minLat || lat > maxLat) {
-      return false;
-    }
-
-    return pointInPolygon(point, polygon);
-  });
-}
-
-function filterStreetGeoJson(geoJson, boundaryGeoJson) {
-  if (!geoJson || !Array.isArray(geoJson.features)) {
-    return geoJson;
-  }
-
-  const boundaryIndex = buildBoundaryPolygonIndex(boundaryGeoJson);
-
+function filterStreetGeoJson(geoJson) {
+  if (!geoJson || !Array.isArray(geoJson.features)) return geoJson;
   return {
     ...geoJson,
-    features: geoJson.features.filter((feature) => {
-      if (getGeometryLength(feature?.geometry) < MIN_STREET_GEOMETRY_LENGTH) {
-        return false;
-      }
-
-      if (!boundaryIndex.length) {
-        return true;
-      }
-
-      const referencePoints = getGeometryReferencePoints(feature?.geometry);
-      return referencePoints.some((point) => pointInBoundary(point, boundaryIndex));
-    }),
+    features: geoJson.features.filter((feature) => hasRenderableGeometry(feature?.geometry)),
   };
 }
 
+// ── Data loading & rendering ──────────────────────────────────────────────────
+
 async function loadGeoJson() {
-  setStatus("Loading map objects...");
-
+  setStatus("Завантаження обʼєктів мапи...");
   try {
-    await loadCsvData();
+    const streetResponse = await fetch(MAP_CONFIG.streetGeoJsonPath, { cache: "no-store" });
+    if (!streetResponse.ok) throw new Error(`Failed to load street GeoJSON: ${streetResponse.status}`);
 
-    const [streetResponse, boundaryResponse] = await Promise.all([
-      fetch(MAP_CONFIG.streetGeoJsonPath, { cache: "no-store" }),
-      fetch(MAP_CONFIG.boundaryGeoJsonPath, { cache: "no-store" }),
-    ]);
-
-    if (!streetResponse.ok) {
-      throw new Error(`Failed to load street GeoJSON: ${streetResponse.status}`);
-    }
-
-    if (!boundaryResponse.ok) {
-      throw new Error(`Failed to load boundary GeoJSON: ${boundaryResponse.status}`);
-    }
-
-    const [geoJson, boundaryGeoJson] = await Promise.all([
-      streetResponse.json(),
-      boundaryResponse.json(),
-    ]);
-
-    currentBoundaryGeoJson = normalizeGeoJson(boundaryGeoJson);
-    currentGeoJson = filterStreetGeoJson(normalizeGeoJson(geoJson), currentBoundaryGeoJson);
+    const geoJson = await streetResponse.json();
+    currentGeoJson = filterStreetGeoJson(normalizeGeoJson(geoJson));
+    maxClaimCount = computeMaxClaimCount(currentGeoJson);
     renderGeoJsonLayer();
-
-    const featureCount = Array.isArray(currentGeoJson?.features) ? currentGeoJson.features.length : 0;
-    setStatus(`Loaded ${featureCount} objects`);
   } catch (error) {
     console.error(error);
-    setStatus("GeoJSON loading error. Check configured data paths", true);
+    setStatus("Помилка завантаження даних. Перевірте шляхи до файлів.", true);
   }
+}
+
+function computeMaxClaimCount(geoJson) {
+  let max = 1;
+  (geoJson?.features || []).forEach((feature) => {
+    max = Math.max(max, parseCount(feature?.properties?.["COUNTA of Тип заяви"]));
+  });
+  return max;
 }
 
 function renderGeoJsonLayer() {
-  if (!currentGeoJson) {
-    return;
-  }
+  if (!currentGeoJson) return;
 
-  if (streetLayer) {
-    streetLayer.remove();
-  }
+  if (streetLayer) streetLayer.remove();
+  layersById.clear();
+  featureById.clear();
+  geomKeyById.clear();
+  idsByGeomKey.clear();
+  selectedId = null;
 
-  streetLayer = L.geoJSON(currentGeoJson, {
-    style: featureStyle,
-    onEachFeature,
-  }).addTo(map);
+  const feats = Array.isArray(currentGeoJson.features) ? currentGeoJson.features : [];
+  const lineFeatures = feats.filter((f) => f.geometry && f.geometry.type !== "Point");
+  const pointFeatures = feats.filter((f) => f.geometry && f.geometry.type === "Point");
 
-  if (boundaryLayer) {
-    boundaryLayer.remove();
-  }
+  // Matched streets: real geometry rendered as lines.
+  streetLayer = L.geoJSON(
+    { type: "FeatureCollection", features: lineFeatures },
+    { style: featureStyle, onEachFeature }
+  ).addTo(map);
 
-  boundaryLayer = null;
-
-  const totalFeatures = Array.isArray(currentGeoJson.features) ? currentGeoJson.features.length : 0;
-  setStatus(`Loaded ${totalFeatures} objects`);
-
-  map.fitBounds(DONETSK_BOUNDS, {
-    padding: [24, 24],
-    maxZoom: 7,
+  // Approximate streets: no real coordinates — all sit at the settlement centre, so
+  // we cluster them (one badge per settlement) and spiderfy on click instead of
+  // scattering fake points. Falls back to plain markers if the plugin is missing.
+  if (approxCluster) approxCluster.remove();
+  approxCluster = typeof L.markerClusterGroup === "function"
+    ? L.markerClusterGroup({
+        showCoverageOnHover: false,
+        spiderfyOnMaxZoom: true,
+        maxClusterRadius: 45,
+        iconCreateFunction: approxClusterIcon,
+      })
+    : L.layerGroup();
+  pointFeatures.forEach((feature) => {
+    const [lng, lat] = feature.geometry.coordinates;
+    const marker = L.marker([lat, lng], { icon: approxDotIcon() });
+    registerPointMarker(feature, marker);
+    approxCluster.addLayer(marker);
   });
+  approxCluster.addTo(map);
+
+  // Selection highlight lives on its own overlay, always above streetLayer, so it
+  // never fights the base layer's z-order (no bringToFront needed anywhere).
+  if (selectionLayer) selectionLayer.remove();
+  selectionLayer = L.layerGroup().addTo(map);
+
+  setStatus(`Завантажено ${feats.length} обʼєктів`);
+
+  map.fitBounds(DONETSK_BOUNDS, { padding: [24, 24], maxZoom: 7 });
   map.setMinZoom(MAP_CONFIG.minZoom);
 }
 
-async function loadCsvData() {
-  try {
-    const response = await fetch(encodeURI(MAP_CONFIG.csvPath), { cache: "no-store" });
-    if (!response.ok) {
-      console.warn(`Failed to load CSV: ${response.status}`);
-      return;
-    }
+// ── Styling ───────────────────────────────────────────────────────────────────
 
-    const text = await response.text();
-    const rows = parseCsv(text);
-    if (!rows.length) return;
-
-    const headers = rows[0].map((header) => header.replace(/\uFEFF/g, "").trim());
-    const idIndex = headers.findIndex((header) => header === "ID");
-    const countIndex = headers.findIndex((header) => /COUNTA of Тип заяви/i.test(header) || /COUNT/i.test(header) || /Тип заяви/i.test(header));
-    const streetIndex = headers.findIndex((header) => /Вулиця/i.test(header));
-
-    for (const row of rows.slice(1)) {
-      const id = row[idIndex]?.trim();
-      if (!id) continue;
-
-      const countValue = row[countIndex] ? row[countIndex].trim().replace(/\s+/g, "") : "";
-      const count = parseInt(countValue.replace(/[^0-9]/g, ""), 10) || 1;
-      idCounts.set(id, count);
-
-      const street = row[streetIndex]?.trim() || "Unknown";
-      const currentStreetCount = streetCounts.get(street) || 0;
-      streetCounts.set(street, currentStreetCount + count);
-      maxStreetCount = Math.max(maxStreetCount, currentStreetCount + count);
-
-      const record = {};
-      headers.forEach((header, index) => {
-        if (index === idIndex) return;
-        const value = row[index]?.trim();
-        if (value) {
-          record[header] = value;
-        }
-      });
-      csvDataById.set(id, record);
-    }
-  } catch (error) {
-    console.warn("CSV parsing error", error);
-  }
+function parseCount(value) {
+  const digits = String(value ?? "").replace(/[^0-9]/g, "");
+  return parseInt(digits, 10) || 1;
 }
 
-function parseCsv(text) {
-  const rows = [];
-  let current = [];
-  let field = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const next = text[i + 1];
-
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        field += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (char === "," && !inQuotes) {
-      current.push(field);
-      field = "";
-    } else if ((char === "\n" || char === "\r") && !inQuotes) {
-      if (char === "\r" && next === "\n") {
-        i++;
-      }
-      current.push(field);
-      rows.push(current);
-      current = [];
-      field = "";
-    } else {
-      field += char;
-    }
-  }
-
-  if (field !== "" || current.length > 0) {
-    current.push(field);
-    rows.push(current);
-  }
-
-  return rows.filter((row) => row.length > 1 || (row.length === 1 && row[0] !== ""));
+function isApprox(feature) {
+  const props = feature?.properties || {};
+  return props.approx === true || props.geometry_kind === "Point" || feature?.geometry?.type === "Point";
 }
 
 function featureStyle(feature) {
-  const props = feature.properties || {};
-  const street = props["Вулиця"] || props.osm_street || "Unknown";
-  const streetCount = streetCounts.get(street) || 1;
-
-  return {
-    color: getLineColor(streetCount),
-    weight: 2.8,
-    opacity: 0.98,
-    lineCap: "butt",
-    lineJoin: "miter",
-  };
+  const count = parseCount(feature?.properties?.["COUNTA of Тип заяви"]);
+  return { ...LINE_BASE_STYLE, color: getLineColor(count) };
 }
 
 function getLineColor(count) {
   const colors = [
-    "rgba(255, 0, 0, 0.20)",
-    "rgba(255, 0, 0, 0.32)",
-    "rgba(255, 0, 0, 0.48)",
-    "rgba(255, 0, 0, 0.62)",
-    "rgba(255, 0, 0, 0.78)",
+    "rgba(255, 0, 0, 0.22)",
+    "rgba(255, 0, 0, 0.34)",
+    "rgba(255, 0, 0, 0.50)",
+    "rgba(255, 0, 0, 0.64)",
+    "rgba(255, 0, 0, 0.80)",
     "rgba(255, 0, 0, 0.98)",
   ];
-  if (maxStreetCount <= 1) {
-    return colors[0];
-  }
-
-  const ratio = Math.min(1, Math.max(0, (count - 1) / (maxStreetCount - 1)));
-  const index = Math.round(ratio * (colors.length - 1));
-  return colors[index];
+  if (maxClaimCount <= 1) return colors[0];
+  // sqrt scale: the claim distribution has a long tail, so a linear ramp would
+  // leave almost every street pale. sqrt lifts small counts into visible bands.
+  const ratio = Math.min(1, Math.max(0, Math.sqrt((count - 1) / (maxClaimCount - 1))));
+  return colors[Math.round(ratio * (colors.length - 1))];
 }
+
+function approxDotIcon() {
+  return L.divIcon({ className: "approx-dot", html: "", iconSize: [12, 12] });
+}
+
+function approxClusterIcon(cluster) {
+  const n = cluster.getChildCount();
+  const size = n < 10 ? 30 : n < 100 ? 38 : 46;
+  return L.divIcon({
+    html: `<div class="approx-cluster"><span>${n}</span></div>`,
+    className: "approx-cluster-wrap",
+    iconSize: [size, size],
+  });
+}
+
+function registerPointMarker(feature, marker) {
+  const id = getFeatureId(feature);
+  if (id) {
+    layersById.set(id, marker);
+    featureById.set(id, feature);
+  }
+  marker.bindPopup(buildPopupHtml(feature), { maxWidth: 360 });
+  marker.on("click", () => {
+    clearSelection();
+    selectedId = id;
+  });
+}
+
+// ── Feature indexing & interaction ────────────────────────────────────────────
 
 function getFeatureId(feature) {
   const props = feature?.properties || {};
-  return props.ID || props.id || props["ID"] || "";
+  return props.ID || props.id || "";
+}
+
+function geomSignature(geometry) {
+  if (!geometry) return "";
+  return `${geometry.type}:${JSON.stringify(geometry.coordinates)}`;
 }
 
 function onEachFeature(feature, layer) {
+  const id = getFeatureId(feature);
+  if (id) {
+    layersById.set(id, layer);
+    featureById.set(id, feature);
+    const key = geomSignature(feature.geometry);
+    geomKeyById.set(id, key);
+    if (!idsByGeomKey.has(key)) idsByGeomKey.set(key, []);
+    idsByGeomKey.get(key).push(id);
+  }
+
   layer.bindPopup(buildPopupHtml(feature), { maxWidth: 360 });
 
   layer.on({
+    click(event) {
+      L.DomEvent.stop(event);
+      handleFeatureClick(id, event.latlng);
+    },
     mouseover(event) {
-      const props = event.target.feature.properties || {};
-      const street = props["Вулиця"] || props.osm_street || "Unknown";
-      const streetCount = streetCounts.get(street) || 1;
-      
-      event.target.setStyle({
-        color: "rgba(255, 0, 0, 1)",
-        weight: 3.5,
-        opacity: 1,
-      });
-      event.target.bringToFront();
+      if (isApprox(feature)) return; // points are already distinct; no hover flicker
+      event.target.setStyle(LINE_HOVER_STYLE);
     },
     mouseout(event) {
-      if (streetLayer) {
-        streetLayer.resetStyle(event.target);
-      }
+      if (isApprox(feature)) return;
+      if (streetLayer) streetLayer.resetStyle(event.target);
     },
   });
 }
 
+function handleFeatureClick(id, latlng) {
+  if (!id) return;
+  const key = geomKeyById.get(id);
+  const ids = idsByGeomKey.get(key) || [id];
+  if (ids.length <= 1) {
+    selectFeatureById(id, { pan: false });
+  } else {
+    showStackPicker(ids, latlng);
+  }
+}
+
+// ── Selection & persistent highlight ──────────────────────────────────────────
+
+function selectFeatureById(id, { pan = false } = {}) {
+  const layer = layersById.get(id);
+  const feature = featureById.get(id);
+  if (!layer || !feature) {
+    setStatus("Обʼєкт не знайдено на мапі.");
+    return;
+  }
+
+  clearSelection();
+  selectedId = id;
+  const props = feature.properties || {};
+
+  if (feature.geometry?.type === "Point") {
+    // Approx street: no real coordinates. Zoom to the settlement and show its info at
+    // the settlement centre — never spiderfy/over-zoom to a fake position.
+    const latlng = layer.getLatLng();
+    if (pan) map.setView(latlng, 14);
+    L.popup({ maxWidth: 360 }).setLatLng(latlng).setContent(buildPopupHtml(feature)).openOn(map);
+  } else {
+    applySelectionHighlight(layer, feature);
+    if (pan) {
+      const bounds = layer.getBounds?.();
+      if (bounds && bounds.isValid()) map.fitBounds(bounds.pad(0.3), { maxZoom: 17 });
+    }
+    layer.openPopup();
+  }
+  setStatus(`Обрано: ${props["Вулиця"] || props["Населений пункт"] || "обʼєкт"}.`);
+}
+
+function clearSelection() {
+  if (selectionLayer) selectionLayer.clearLayers();
+  selectedId = null;
+}
+
+function applySelectionHighlight(layer, feature) {
+  if (!selectionLayer) return;
+  // Ring only for line geometry (interactive:false so it never swallows clicks).
+  // Approx points live in clusters; their popup + revealed marker is the feedback,
+  // and a ring at the clustered centre would be misplaced when spiderfied.
+  const latlngs = feature.geometry?.type !== "Point" ? layer.getLatLngs?.() : null;
+  if (latlngs) {
+    L.polyline(latlngs, { ...SELECTION_LINE_STYLE, interactive: false }).addTo(selectionLayer);
+  }
+}
+
+// ── Stack picker (several objects share one geometry) ─────────────────────────
+
+function showStackPicker(ids, latlng) {
+  const container = document.createElement("div");
+  container.className = "stack-picker";
+
+  const title = document.createElement("div");
+  title.className = "stack-picker__title";
+  title.textContent = `${ids.length} обʼєктів тут`;
+  container.appendChild(title);
+
+  const list = document.createElement("ul");
+  list.className = "stack-picker__list";
+
+  ids.forEach((id) => {
+    const feature = featureById.get(id);
+    const props = feature?.properties || {};
+    const item = document.createElement("li");
+    item.className = "stack-picker__item";
+    item.tabIndex = 0;
+
+    const street = document.createElement("span");
+    street.className = "stack-picker__street";
+    street.textContent = props["Вулиця"] || "Обʼєкт";
+    const place = document.createElement("span");
+    place.className = "stack-picker__place";
+    place.textContent = [props["Населений пункт"], props["Громада"]].filter(Boolean).join(" · ");
+
+    item.appendChild(street);
+    item.appendChild(place);
+
+    const choose = () => {
+      map.closePopup();
+      selectFeatureById(id, { pan: false });
+    };
+    item.addEventListener("click", choose);
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") choose();
+    });
+    list.appendChild(item);
+  });
+
+  container.appendChild(list);
+
+  L.popup({ maxWidth: 320, className: "stack-picker-popup", autoPan: true })
+    .setLatLng(latlng)
+    .setContent(container)
+    .openOn(map);
+}
+
+// ── Popup ─────────────────────────────────────────────────────────────────────
+
 function buildPopupHtml(feature) {
   const props = feature.properties || {};
-  const id = getFeatureId(feature);
-  const csvProps = csvDataById.get(id) || {};
-  const title = csvProps["Вулиця"] || props["Вулиця"] || props.osm_name || props.osm_street || "Об'єкт";
-  const community = csvProps["Громада"] || props["Громада"] || "Донецька обл.";
-  const settlement = csvProps["Населений пункт"] || props["Населений пункт"] || "";
+  const title = props["Вулиця"] || props.osm_name || "Обʼєкт";
+  const community = props["Громада"] || "Донецька обл.";
+  const settlement = props["Населений пункт"] || "";
   const subtitle = [community, settlement].filter(Boolean).join(" · ");
+  const area = props["Область"] || "Донецька обл.";
+  const claimCount = props["COUNTA of Тип заяви"] || "—";
+  const compensation = props["SUM of Сума компенсації, грн"] || "—";
 
-  const area = props["Область"] || csvProps["Область"] || "Донецька обл.";
-  const claimCount = csvProps["COUNTA of Тип заяви"] || csvProps["Тип заяви"] || "1";
-  const compensation = csvProps["SUM of Сума компенсації, грн"] || csvProps["Сума компенсації, грн"] || "0,00";
+  const approxNote = isApprox(feature)
+    ? `<div class="popup-approx">Приблизне розташування</div>`
+    : "";
 
   return `
     <div class="popup">
@@ -548,6 +429,7 @@ function buildPopupHtml(feature) {
           <div class="popup-subtitle">${escapeHtml(subtitle)}</div>
         </div>
       </div>
+      ${approxNote}
       <div class="popup-row">
         <span class="popup-key">Область</span>
         <span class="popup-value">${escapeHtml(area)}</span>
@@ -576,22 +458,7 @@ function buildPopupHtml(feature) {
   `;
 }
 
-function safeUrl(rawValue) {
-  if (typeof rawValue !== "string") {
-    return null;
-  }
-
-  try {
-    const url = new URL(rawValue.trim());
-    if (url.protocol === "http:" || url.protocol === "https:") {
-      return url.href;
-    }
-  } catch (_error) {
-    return null;
-  }
-
-  return null;
-}
+// ── Search ────────────────────────────────────────────────────────────────────
 
 function attachSearchHandlers() {
   if (!searchInput || !searchButton) return;
@@ -602,15 +469,11 @@ function attachSearchHandlers() {
       runMapSearch();
     }
   });
-
-  searchButton.addEventListener("click", () => {
-    runMapSearch();
-  });
+  searchButton.addEventListener("click", () => runMapSearch());
 
   document.addEventListener("click", (event) => {
-    const target = event.target;
     const searchContainer = searchInput.closest(".map-search");
-    if (searchContainer && !searchContainer.contains(target)) {
+    if (searchContainer && !searchContainer.contains(event.target)) {
       closeSearchResults();
     }
   });
@@ -620,19 +483,28 @@ function normalizeSearchString(value) {
   return String(value || "")
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[̀-ͯ]/g, "")
     .replace(/[’'`]/g, "")
     .replace(/[\-–—]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+// Canonicalize a settlement label so "смт Велика Новосілка", "смт. Велика Новосілка"
+// and "сщ. Велика Новосілка" collapse to one display form for grouping.
+function normalizeSettlementName(value) {
+  return String(value || "")
+    .replace(/^(с\.|м\.|смт\.?|сщ\.?|с-ще|селище|село|місто)\s+/i, "")
+    .replace(/\s*\(.*?\)/g, "")
+    .replace(/\s*,.*$/, "")
+    .trim();
+}
+
 function runMapSearch() {
   if (!streetLayer) {
-    setStatus("Завантаження карти ще не завершено, зачекайте.");
+    setStatus("Завантаження мапи ще не завершено, зачекайте.");
     return;
   }
-
   const query = searchInput?.value.trim();
   if (!query) {
     setStatus("Введіть вулицю або населений пункт для пошуку.");
@@ -644,30 +516,25 @@ function runMapSearch() {
   const settlementMatches = [];
   const streetMatches = [];
 
-  streetLayer.eachLayer((layer) => {
-    const props = layer.feature?.properties || {};
-    const street = (props["Вулиця"] || props.osm_street || "").toString().trim();
-    const settlement = (props["Населений пункт"] || props["Громада"] || props.osm_city || "").toString().trim();
+  featureById.forEach((feature, id) => {
+    const props = feature.properties || {};
+    const street = (props["Вулиця"] || "").toString().trim();
+    const settlement = (props["Населений пункт"] || props["Громада"] || "").toString().trim();
+    const community = (props["Громада"] || "").toString().trim();
     const streetKey = normalizeSearchString(street);
     const settlementKey = normalizeSearchString(settlement);
 
-    const settlementMatch = settlementKey && settlementKey.includes(normalizedQuery);
-    const streetMatch = streetKey && streetKey.includes(normalizedQuery);
-
-    if (settlementMatch) {
+    if (settlementKey && settlementKey.includes(normalizedQuery)) {
       const score = settlementKey === normalizedQuery ? 3 : settlementKey.startsWith(normalizedQuery) ? 2 : 1;
-      settlementMatches.push({ layer, street, settlement, score });
+      settlementMatches.push({ id, street, settlement, community, score });
     }
-
-    if (streetMatch) {
+    if (streetKey && streetKey.includes(normalizedQuery)) {
       const score = streetKey === normalizedQuery ? 3 : streetKey.startsWith(normalizedQuery) ? 2 : 1;
-      streetMatches.push({ layer, street, settlement, score });
+      streetMatches.push({ id, street, settlement, community, score });
     }
   });
 
-  const useSettlementMatches = settlementMatches.length > 0;
-  const matches = useSettlementMatches ? settlementMatches : streetMatches;
-
+  const matches = settlementMatches.length > 0 ? settlementMatches : streetMatches;
   if (!matches.length) {
     setStatus(`Нічого не знайдено для "${query}".`);
     closeSearchResults();
@@ -680,43 +547,50 @@ function runMapSearch() {
     return;
   }
 
-  const resultItems = matches.map((match) => ({
-    layer: match.layer,
-    street: match.street,
-    settlement: match.settlement,
-  }));
-  renderSearchResults(resultItems);
-  setStatus(`Знайдено ${matches.length} об'єктів.`);
+  renderSearchResults(matches.slice(0, 60));
+  setStatus(`Знайдено ${matches.length} обʼєктів.`);
 }
 
 function renderSearchResults(results) {
   if (!searchResultsEl) return;
-
   closeSearchResults();
+
+  // Disambiguate identical street+settlement rows with a short ID suffix.
+  const labelCounts = new Map();
+  results.forEach((item) => {
+    const label = `${item.street}|${normalizeSettlementName(item.settlement)}|${item.community}`;
+    labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
+  });
 
   const list = document.createElement("ul");
   list.className = "map-search-results__list";
 
-  results.forEach((item, index) => {
-    const displayText = item.street && item.settlement
-      ? `${item.street} — ${item.settlement}`
-      : item.street || item.settlement || "Об'єкт";
-
+  results.forEach((item) => {
     const listItem = document.createElement("li");
     listItem.className = "map-search-results__item";
     listItem.tabIndex = 0;
-    listItem.textContent = displayText;
-    listItem.addEventListener("click", () => {
+
+    const streetLine = document.createElement("span");
+    streetLine.className = "map-search-results__street";
+    const label = `${item.street}|${normalizeSettlementName(item.settlement)}|${item.community}`;
+    const suffix = labelCounts.get(label) > 1 ? ` #${String(item.id).slice(0, 4)}` : "";
+    streetLine.textContent = (item.street || "Обʼєкт") + suffix;
+
+    const placeLine = document.createElement("small");
+    placeLine.className = "map-search-results__place";
+    placeLine.textContent = [item.settlement, item.community].filter(Boolean).join(" · ");
+
+    listItem.appendChild(streetLine);
+    listItem.appendChild(placeLine);
+
+    const choose = () => {
       selectSearchResult(item);
       closeSearchResults();
-    });
+    };
+    listItem.addEventListener("click", choose);
     listItem.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        selectSearchResult(item);
-        closeSearchResults();
-      }
+      if (event.key === "Enter") choose();
     });
-
     list.appendChild(listItem);
   });
 
@@ -732,29 +606,17 @@ function closeSearchResults() {
 
 function selectSearchResult(match) {
   closeSearchResults();
-  const bounds = match.layer.getBounds?.() || match.layer.getLatLng?.();
-
-  if (bounds) {
-    if (typeof bounds.getCenter === "function" && typeof bounds.pad === "function") {
-      map.fitBounds(bounds.pad(0.2), { maxZoom: 17 });
-    } else if (typeof bounds.lat === "number" && typeof bounds.lng === "number") {
-      map.setView(bounds, 17);
-    }
-  }
-
-  match.layer.openPopup();
-  setStatus(`Перейшли до ${match.street || match.settlement || "об'єкта"}.`);
+  selectFeatureById(match.id, { pan: true });
 }
+
+// ── Status & helpers ──────────────────────────────────────────────────────────
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
   statusEl.classList.toggle("status--error", isError);
   statusEl.classList.add("status--visible");
-
   if (!isError) {
-    window.setTimeout(() => {
-      statusEl.classList.remove("status--visible");
-    }, 3200);
+    window.setTimeout(() => statusEl.classList.remove("status--visible"), 3200);
   }
 }
 

@@ -1,34 +1,69 @@
-# Вільне Радіо
+# Вільне Радіо — мапа заяв про компенсацію (Донецька обл.)
 
-Static map project based on vanilla HTML/CSS/JS + Leaflet with CartoDB Positron Light tiles.
+Статична мапа на vanilla HTML/CSS/JS + Leaflet з тайлами CartoDB Positron Light.
 
-The map uses two GeoJSON layers:
+Кожен обʼєкт — вулиця (або приблизна точка) з кількістю заяв про компенсацію та
+сумою. Обʼєкти вибираються окремо, підсвічуються, шукаються за назвою/населеним пунктом.
 
-- street geometries from `data/Data_fixed.geojson`
-- Donetsk oblast boundary from `data/donetsk_oblast_boundary.geojson`
+## Дані
 
-## Structure
+Мапа читає один шар: `data/Data_regeocoded.geojson`, який будує пайплайн
+перегеокодування (див. нижче). Кожна фіча має:
 
-- `index.html`
-- `css/styles.css`
-- `js/config.js`
-- `js/map.js`
-- `data/Data.geojson`
+- `Вулиця`, `Громада`, `Населений пункт`, `Область`
+- `COUNTA of Тип заяви` (кількість заяв) — визначає інтенсивність кольору
+- `SUM of Сума компенсації, грн`
+- `geometry_kind` / `geocode_status` / `approx` — точні вулиці рендеряться як лінії
+  (`LineString`/`MultiLineString`), приблизні (немає вулиці в OSM) — як окремі
+  маркери біля центру населеного пункту з позначкою «Приблизне розташування».
 
-## Run locally
+Гарантія якості: **жодні дві різні вулиці не мають однакової геометрії** (те, що
+раніше спричиняло «злипання» і хибне підсвічування).
 
-Start any static server from this folder, for example:
+## Перегеокодування (офлайн, без мережі)
+
+`regeocode_pipeline.py` перебудовує геометрію з локального OSM-екстракту:
+
+```bash
+./don_geocode/env/bin/python regeocode_pipeline.py
+```
+
+Що робить:
+- геокодує `don_geocode/table.csv` (∪ рядки з «Зведної таблички») офлайн-геокодером
+  `don_geocode/geocode_streets_pbf.py` (exact+fuzzy збіг у радіусі + Voronoi);
+- **гейт кордонів**: вулицю приймаємо, лише якщо вона перетинає полігон свого міста
+  (OSM admin_level 10) або, для сіл, полігон своєї громади (admin_level 7) і в межах
+  радіуса села — інакше це однойменна вулиця в іншому НП → приблизна точка;
+- незіставлені вулиці → приблизні точки біля центру нас.пункту (унікальний зсув);
+- приєднує суми/кількість заяв із «Зведної таблички» за `ID`, а де ID не збігається —
+  за (населений пункт + вулиця);
+- пише `data/Data_regeocoded.geojson` та звіт `data/regeocode_report.json`.
+
+Кордони громад/міст беруться з OSM один раз скриптом `fetch_boundaries.py` (потрібна
+мережа) у `data/donetsk_boundaries.geojson`; далі пайплайн працює офлайн. ~99% заяв
+покриті полігоном громади.
+
+OSM-індекс (`don_geocode/ukraine-260528_index_v2.pkl`) уже зібрано. Щоб перебудувати
+його (напр. після оновлення `.osm.pbf`), викличте `geocode_streets_pbf.build_index(...)`
+з `force=True` — це розбирає весь екстракт (~15–20 хв).
+
+## Структура
+
+- `index.html`, `css/styles.css`, `js/config.js`, `js/map.js`
+- `data/Data_regeocoded.geojson` — активний шар мапи
+- `regeocode_pipeline.py` — пайплайн даних
+- `don_geocode/` — офлайн-геокодер, OSM-екстракт, індекс, вхідний `table.csv`
+
+## Запуск локально
 
 ```bash
 python3 -m http.server 8080
 ```
 
-Then open:
+Далі відкрити `http://localhost:8080`.
 
-`http://localhost:8080`
+## Деплой
 
-## Deploy
-
-Upload the whole folder to your web server and open the URL of `index.html`.
-
-If you replace the street data or oblast boundary, keep the configured paths in `js/config.js` in sync.
+Завантажити всю папку на веб-сервер (або GitHub Pages) і відкрити `index.html`.
+Якщо оновлюєте дані — перезапустіть `regeocode_pipeline.py` і закомітьте
+оновлений `data/Data_regeocoded.geojson`.
