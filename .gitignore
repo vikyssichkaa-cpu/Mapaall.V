@@ -17,6 +17,9 @@ don_geocode/
 
 # Source / intermediate / report data (frontend loads only data/Data_regeocoded.geojson)
 *.csv
+ADMIN_1.geojson
+ADMIN_2.geojson
+ADMIN_3.geojson
 errors.json
 data/Data.geojson
 data/Data_fixed.geojson

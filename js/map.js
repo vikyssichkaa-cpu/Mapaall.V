@@ -413,11 +413,19 @@ function buildPopupHtml(feature) {
   const settlement = props["Населений пункт"] || "";
   const subtitle = [community, settlement].filter(Boolean).join(" · ");
   const area = props["Область"] || "Донецька обл.";
+  const rayon = props["Район"] || "";
   const claimCount = props["COUNTA of Тип заяви"] || "—";
   const compensation = props["SUM of Сума компенсації, грн"] || "—";
 
   const approxNote = isApprox(feature)
     ? `<div class="popup-approx">Приблизне розташування</div>`
+    : "";
+
+  const rayonRow = rayon
+    ? `<div class="popup-row">
+        <span class="popup-key">Район</span>
+        <span class="popup-value">${escapeHtml(rayon)}</span>
+      </div>`
     : "";
 
   return `
@@ -434,6 +442,7 @@ function buildPopupHtml(feature) {
         <span class="popup-key">Область</span>
         <span class="popup-value">${escapeHtml(area)}</span>
       </div>
+      ${rayonRow}
       <div class="popup-row">
         <span class="popup-key">Громада</span>
         <span class="popup-value">${escapeHtml(community)}</span>
