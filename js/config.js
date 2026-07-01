@@ -1,5 +1,6 @@
 export const MAP_CONFIG = {
   streetGeoJsonPath: "data/Data_regeocoded.geojson",
+  hromadaGeoJsonPath: "data/hromady_donetsk.geojson",
   initialCenter: [48.0159, 37.8028],
   initialZoom: 7,
   minZoom: 5,
@@ -8,6 +9,16 @@ export const MAP_CONFIG = {
   tileUrl: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
   tileAttribution:
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+};
+
+// Hromada boundary outlines — thin grey stroke, no fill, non-interactive. Drawn
+// on a dedicated pane BELOW the streets so it never intercepts clicks or hover.
+export const HROMADA_OUTLINE_STYLE = {
+  color: "#7b828c",
+  weight: 1,
+  opacity: 0.6,
+  fill: false,
+  interactive: false,
 };
 
 // Base line weight / caps for street geometries. Colour is computed per feature

@@ -1,9 +1,10 @@
 import {
   MAP_CONFIG,
+  HROMADA_OUTLINE_STYLE,
   LINE_BASE_STYLE,
   LINE_HOVER_STYLE,
   SELECTION_LINE_STYLE,
-} from "./config.js?v=3";
+} from "./config.js?v=4";
 
 const map = L.map("map", {
   zoomControl: true,
@@ -39,6 +40,12 @@ L.tileLayer(MAP_CONFIG.tileUrl, {
   maxZoom: MAP_CONFIG.maxZoom,
 }).addTo(map);
 
+// Dedicated pane for hromada outlines: above the basemap tiles (200) but below the
+// street/overlay pane (400), and click-through so it stays purely decorative.
+map.createPane("hromadaPane");
+map.getPane("hromadaPane").style.zIndex = 350;
+map.getPane("hromadaPane").style.pointerEvents = "none";
+
 L.control.scale({ imperial: false }).addTo(map);
 
 const DONETSK_BOUNDS = L.latLngBounds([46.88, 36.55], [49.05, 38.87]);
@@ -46,6 +53,7 @@ map.setMaxBounds(DONETSK_BOUNDS.pad(MAP_CONFIG.maxBoundsPad));
 map.setView(MAP_CONFIG.initialCenter, MAP_CONFIG.initialZoom);
 
 attachSearchHandlers();
+loadHromadaOutlines();
 loadGeoJson();
 
 // ── Coordinate normalization / boundary filtering ─────────────────────────────
@@ -119,6 +127,25 @@ function filterStreetGeoJson(geoJson) {
 }
 
 // ── Data loading & rendering ──────────────────────────────────────────────────
+
+// Decorative hromada boundaries. Loaded independently of the claim data so it never
+// blocks or breaks the map; failure is silent (outlines are optional context).
+let hromadaLayer;
+async function loadHromadaOutlines() {
+  try {
+    const res = await fetch(MAP_CONFIG.hromadaGeoJsonPath, { cache: "no-store" });
+    if (!res.ok) throw new Error(`hromada outlines: ${res.status}`);
+    const gj = await res.json();
+    if (hromadaLayer) hromadaLayer.remove();
+    hromadaLayer = L.geoJSON(gj, {
+      pane: "hromadaPane",
+      interactive: false,
+      style: () => HROMADA_OUTLINE_STYLE,
+    }).addTo(map);
+  } catch (error) {
+    console.warn("Hromada outlines not shown:", error);
+  }
+}
 
 async function loadGeoJson() {
   setStatus("Завантаження обʼєктів мапи...");
