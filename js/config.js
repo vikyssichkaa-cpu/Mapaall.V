@@ -1,67 +1,29 @@
 export const MAP_CONFIG = {
-  streetGeoJsonPath: "data/Data_regeocoded.geojson",
-  hromadaGeoJsonPath: "data/hromady_donetsk.geojson",
+  streetGeoJsonPath: "data/Data_fixed.geojson",
+  boundaryGeoJsonPath: "data/donetsk_oblast_boundary.geojson",
+  csvPath: "Зведна табличка проєкт - Зведена таблиця.csv",
   initialCenter: [48.0159, 37.8028],
   initialZoom: 7,
   minZoom: 5,
   maxZoom: 20,
   maxBoundsPad: 0.08,
-  tileUrl: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+  tileUrl: "https://tiles.cestra.com.ua/v1/styles/positron-uk/{z}/{x}/{y}{r}.webp?key=pk-tiles-phoEPNVLxAcySVEmuNXPFgCDUr08aYlk",
   tileAttribution:
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
 };
 
-// Hromada boundary outlines — thin grey stroke, no fill, non-interactive. Drawn
-// on a dedicated pane BELOW the streets so it never intercepts clicks or hover.
-export const HROMADA_OUTLINE_STYLE = {
-  color: "#7b828c",
-  weight: 1,
-  opacity: 0.6,
-  fill: false,
-  interactive: false,
-};
-
-// Base line weight / caps for street geometries. Colour is computed per feature
-// from its own claim count (see getLineColor in map.js).
-export const LINE_BASE_STYLE = {
-  weight: 2.8,
-  opacity: 0.98,
-  lineCap: "butt",
-  lineJoin: "miter",
-};
-
-// Transient emphasis while hovering a line (no persistent state, no bringToFront).
-export const LINE_HOVER_STYLE = {
-  color: "rgba(220, 0, 0, 1)",
-  weight: 3.6,
-  opacity: 1,
-};
-
-// Persistent highlight drawn on a separate overlay for the selected object.
-export const SELECTION_LINE_STYLE = {
-  color: "#0b6bcb",
-  weight: 6,
-  opacity: 0.9,
-  lineCap: "round",
-  lineJoin: "round",
-};
-
-// Approximate objects (streets absent from OSM) — pinned near the settlement
-// centre and rendered as a distinct marker, never as a confident line.
-export const APPROX_MARKER_STYLE = {
-  radius: 4,
-  color: "#b45309",
-  weight: 1,
-  opacity: 0.75,
-  fillColor: "#f59e0b",
-  fillOpacity: 0.45,
-};
-
-export const SELECTION_MARKER_STYLE = {
-  radius: 9,
-  color: "#0b6bcb",
-  weight: 3,
+export const FEATURE_STYLE = {
+  color: "#2f6fab",
+  weight: 1.4,
   opacity: 0.95,
-  fillColor: "#0b6bcb",
-  fillOpacity: 0.2,
+  fillColor: "#4f8fcf",
+  fillOpacity: 0.3,
+};
+
+export const FEATURE_HOVER_STYLE = {
+  color: "#1b4f80",
+  weight: 2.2,
+  opacity: 1,
+  fillColor: "#2f6fab",
+  fillOpacity: 0.48,
 };
